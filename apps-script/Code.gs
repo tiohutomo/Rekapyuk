@@ -14,9 +14,7 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(20000);
     var body = JSON.parse(e.postData.contents);
     if (body.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });
     var rows = body.rows || [];
@@ -61,7 +59,5 @@ function doPost(e) {
     return json_({ ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
-  } finally {
-    try { lock.releaseLock(); } catch (x) {}
   }
 }
