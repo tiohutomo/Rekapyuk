@@ -179,6 +179,7 @@ summary{font-weight:700;cursor:pointer;min-height:32px}
 
 <section id="v-set" hidden>
   <div id="setSub" class="row3" style="margin-bottom:12px"></div>
+  <p class="m" id="appVer" style="margin:-4px 0 10px;text-align:right"></p>
   <div class="card" id="setIntro">
     <b>Setup</b>
     <p class="m">Tambah, ubah nama, atau hapus rekening dan kategori, sama seperti daftar di spreadsheet Merkuri. Mengubah nama otomatis ikut mengubah transaksi yang sudah tersimpan. Rekening atau kategori yang masih dipakai transaksi tidak bisa dihapus. Ubah nama saja atau hapus transaksinya dulu.</p>
@@ -1032,7 +1033,7 @@ async function gsCall(url,method,body){
 }
 function gsParse(r){
   try{return JSON.parse(r.text)}catch(e){}
-  var t=String(r.text||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,140);
+  var t=String(r.text||"").replace(/<(script|style)[\s\S]*?<\/\1>/gi," ").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,220);
   throw new Error("Skrip membalas bukan data yang dikenal (kode "+r.status+")"+(t?": "+t:"")+". Biasanya deployment belum diperbarui atau izin belum diberikan.")
 }
 async function sendGsScript(src,out){
@@ -1339,7 +1340,9 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
+var APP_VER="v9 (kirim Sheets via GET)";
 function renderSub(){
+  $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
   [["tx","Isi Transaksi"],["gs","Google Sheets"],["bk","Backup"]].forEach(function(v){
     bar.append(h("button",{class:setSub===v[0]?"":"sec",text:v[1],"aria-pressed":setSub===v[0],onclick:function(){setSub=v[0];renderSub()}}));
