@@ -32,6 +32,7 @@ button:disabled{opacity:.55}
 .sec{background:var(--chip);color:var(--tx)}
 .w{width:100%;margin-top:12px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.row3 button{margin-top:0;padding:10px 4px;font-size:14px}
 .it{border-top:1px solid var(--bd);padding:10px 0}
 .it:first-child{border-top:0}
 .top{display:flex;gap:10px;align-items:center;justify-content:space-between}
@@ -177,15 +178,17 @@ summary{font-weight:700;cursor:pointer;min-height:32px}
 </section>
 
 <section id="v-set" hidden>
-  <div class="card">
+  <div id="setSub" class="row3" style="margin-bottom:12px"></div>
+  <div class="card" id="setIntro">
     <b>Setup</b>
     <p class="m">Tambah, ubah nama, atau hapus rekening dan kategori, sama seperti daftar di spreadsheet Merkuri. Mengubah nama otomatis ikut mengubah transaksi yang sudah tersimpan. Rekening atau kategori yang masih dipakai transaksi tidak bisa dihapus. Ubah nama saja atau hapus transaksinya dulu.</p>
     <p class="m"><b>Tambah dan hapus berlaku mulai bulan berjalan.</b> Bulan-bulan sebelumnya tetap memakai daftar lama. Ubah nama berlaku untuk semua bulan.</p>
     <p class="m">Ingat: dropdown dan dashboard di spreadsheet membaca nama persis. Kalau kamu mengubah daftar di sini, samakan juga di spreadsheet (dan sebaliknya).</p>
     <p id="setMsg" class="m" role="status"></p>
   </div>
-  <div id="setBox"></div>
-  <div class="card" id="bkBox"></div>
+  <div id="sub-tx"><div id="setBox"></div></div>
+  <div id="sub-gs" hidden><div id="gsSetBox"></div></div>
+  <div id="sub-bk" hidden><div class="card" id="bkBox"></div></div>
 </section>
 
 <section id="v-dev" hidden>
@@ -1315,18 +1318,29 @@ function accBlock(open){
   d.append(h("div",{class:"it"},h("b",{text:"Tambah rekening baru"}),h("label",{text:"Nama rekening"}),ni,h("label",{text:"Saldo awal (Rp), hanya diisi sekali di sini"}),no,add));
   return d;
 }
+var setSub="tx";
+function renderSub(){
+  var bar=$("setSub");bar.innerHTML="";
+  [["tx","Isi Transaksi"],["gs","Google Sheets"],["bk","Backup"]].forEach(function(v){
+    bar.append(h("button",{class:setSub===v[0]?"":"sec",text:v[1],"aria-pressed":setSub===v[0],onclick:function(){setSub=v[0];renderSub()}}));
+  });
+  $("setIntro").hidden=setSub!=="tx";
+  ["tx","gs","bk"].forEach(function(k){$("sub-"+k).hidden=k!==setSub});
+}
 function renderSet(){
   var box=$("setBox"),open={};
   Array.from(box.querySelectorAll("details")).forEach(function(d){open[d.dataset.k]=d.open});
-  box.innerHTML="";
+  var gb=$("gsSetBox"),gopen={};
+  Array.from(gb.querySelectorAll("details")).forEach(function(d){gopen[d.dataset.k]=d.open});
+  box.innerHTML="";gb.innerHTML="";
   box.append(accBlock(open.acc));
-  var gd=h("details",{class:"card","data-k":"gs"});if(open.gs)gd.open=true;
+  var gd=h("details",{class:"card","data-k":"gs"});if(open.gs||gopen.gs)gd.open=true;
   var gi=h("input",{value:cfg.gs?"https://docs.google.com/spreadsheets/d/"+cfg.gs+"/edit":"",placeholder:"Tempel link Google Sheets Merkuri-mu","aria-label":"Link Google Sheets"});
   gd.append(h("summary",{text:"Google Sheets"+(cfg.gs?" (tersambung)":"")}),
     h("p",{class:"m",text:"Spreadsheet tujuan tombol Kirim ke Google Sheets di tab Transaksi. Data ditulis ke tab Transaksi: kolom D sampai H dan kolom AY (Deskripsi)."}),gi,
     h("button",{class:"w",text:"Simpan link",onclick:function(){var v=gi.value.trim(),m=v.match(/\/d\/([A-Za-z0-9_-]{20,})/),id=m?m[1]:(/^[A-Za-z0-9_-]{20,}$/.test(v)?v:"");
       if(v&&!id)return sm("Link Google Sheets tidak dikenali.",false);cfg.gs=id;persist();renderSet();sm(id?"Link Google Sheets disimpan.":"Link Google Sheets dihapus.",true)}}));
-  var sd=h("details",{class:"card","data-k":"gsx"});if(open.gsx)sd.open=true;
+  var sd=h("details",{class:"card","data-k":"gsx"});if(gopen.gsx||(gopen.gsx===undefined&&!cfg.gsurl))sd.open=true;
   var ui=h("input",{value:cfg.gsurl||"",placeholder:"Alamat Web app (https://script.google.com/macros/s/.../exec)","aria-label":"Alamat skrip"});
   var ti=h("input",{value:cfg.gstoken||"",placeholder:"Kode rahasia (sama dengan di skrip)","aria-label":"Kode rahasia",style:"margin-top:8px"});
   sd.append(h("summary",{text:"Kirim otomatis lewat skrip"+(cfg.gsurl?" (aktif)":"")}),
@@ -1341,7 +1355,7 @@ function renderSet(){
       try{var r=await fetch(u+(u.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(t),{redirect:"follow"});var d=await r.json();
         renderSet();sm(d&&d.ok?"Tersambung ke spreadsheet: "+d.sheet:"Tersimpan, tapi: "+((d&&d.error)||"skrip tidak merespons"),!!(d&&d.ok))
       }catch(e){renderSet();sm("Tersimpan, tapi belum bisa tersambung. Cek internet, atau apakah akses Web app diset Siapa saja.",false)}}}));
-  box.append(gd);box.append(sd);
+  if(mcpNs)gb.append(gd);gb.append(sd);renderSub();
   var cur=curYm();JS.forEach(function(j){box.append(block(j,j,KAT[j],katOps(j),open[j],function(n){return !actIn(cfg.km[j+"|"+n],cur)}))});
 }
 /* ===== Review bulanan (meniru sheet bulanan Merkuri) ===== */
