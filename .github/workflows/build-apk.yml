@@ -3,7 +3,7 @@ name: Bangun APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, apk-dan-backup]
+    branches: [main]
     paths:
       - "index.html"
       - "apk/**"
