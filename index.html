@@ -423,9 +423,11 @@ var ocrW=null;
 function loadScript(src){return new Promise(function(res,rej){var s=document.createElement("script");s.src=src;s.onload=res;s.onerror=function(){rej({code:"ocr_lib"})};document.head.append(s)})}
 async function getOcr(){
   if(ocrW)return ocrW;
-  if(!window.Tesseract)await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js");
+  var L=window.RK_TESS,tb=L?new URL(L,location.href).href:"https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/";
+  if(!window.Tesseract)await loadScript(tb+"tesseract.min.js");
   try{
-    var w=await Tesseract.createWorker("eng");
+    var opt=L?{workerPath:tb+"worker.min.js",corePath:tb,langPath:tb+"lang/",gzip:false,workerBlobURL:false}:{};
+    var w=await Tesseract.createWorker("eng",1,opt);
     try{await w.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1"})}catch(e){}
     ocrW=w;return w;
   }catch(e){throw{code:"ocr_lib"}}
@@ -475,18 +477,37 @@ async function kvSet(key,val){var d=await dbh(),t=d.transaction(STORE,"readwrite
 async function kvClear(){var d=await dbh(),t=d.transaction(STORE,"readwrite");t.objectStore(STORE).clear();return new Promise(function(res,rej){t.oncomplete=res;t.onerror=function(){rej(t.error)}})}
 var dbShim={
   collection:function(path){return{get:async function(){var items=await kvAll(path+"/");return{docs:items.map(function(it){return{id:it.key.slice(path.length+1),data:function(){return it.val}}})}}}},
-  doc:function(path){return{set:async function(v){await kvSet(path,JSON.parse(JSON.stringify(v)))}}}
+  doc:function(path){return{set:async function(v){await kvSet(path,JSON.parse(JSON.stringify(v)));scheduleAuto()}}}
 };
 
-function saveBlob(name,blob){
+/* ---- Platform: aplikasi Android (Capacitor) atau web ---- */
+var CAP=window.Capacitor,NATIVE=!!(CAP&&CAP.isNativePlatform&&CAP.isNativePlatform());
+window.RK_NATIVE=NATIVE;
+function plug(n){return NATIVE&&CAP.Plugins?CAP.Plugins[n]:null}
+function b64OfBlob(b){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(",")[1]||"")};r.onerror=function(){rej(r.error)};r.readAsDataURL(b)})}
+function toBlob(d,type){return d instanceof Blob?d:new Blob([d],{type:type||"application/octet-stream"})}
+/* Di APK: tulis ke Documents/rekapyuk lalu buka lembar Bagikan. Di web: unduh biasa. */
+async function saveBlob(name,blob,o){
+  o=o||{};
+  if(NATIVE){
+    var FS=plug("Filesystem"),SH=plug("Share"),res={},data=await b64OfBlob(blob);
+    if(FS){try{await FS.writeFile({path:"rekapyuk/"+name,data:data,directory:"DOCUMENTS",recursive:true});res.path="Documents/rekapyuk/"+name}catch(e){res.pathErr=String(e&&e.message||e)}}
+    if(o.share!==false&&SH&&FS){
+      try{var c=await FS.writeFile({path:name,data:data,directory:"CACHE"});await SH.share({title:name,files:[c.uri],dialogTitle:o.dialog||"Simpan atau buka file"});res.shared=true}
+      catch(e){if(/cancel/i.test(String(e&&e.message||e)))res.canceled=true;else res.shareErr=String(e&&e.message||e)}
+    }
+    if(!res.path&&!res.shared&&!res.canceled)throw new Error(res.shareErr||res.pathErr||"native_save");
+    return res;
+  }
   var a=document.createElement("a"),u=URL.createObjectURL(blob);
   a.href=u;a.download=name;document.body.append(a);a.click();
   setTimeout(function(){URL.revokeObjectURL(u);a.remove()},4000);
+  return{web:true};
 }
 window.claude={use:async function(name){
   if(name==="user")return{id:async function(){return"local"}};
   if(name==="db"){await dbh();return dbShim}
-  if(name==="downloads")return{save:async function(o){saveBlob(o.filename,new Blob([o.data],{type:"application/octet-stream"}))}};
+  if(name==="downloads")return{save:async function(o){return saveBlob(o.filename,toBlob(o.data))}};
   if(name==="sample")return localSample;
   throw{code:"capability_disabled"};
 }};
@@ -502,39 +523,94 @@ window.localSummary=function(){
   return"Ringkasan "+last+" (dihitung otomatis, tanpa AI)\nPendapatan: "+f(inn)+"\nPengeluaran: "+f(out)+"\nSelisih: "+(inn-out<0?"-":"")+f(Math.abs(inn-out))+"\n\nPengeluaran terbesar:\n"+top.map(function(k,i){return(i+1)+". "+k+": "+f(cat[k])}).join("\n")+"\n\nPerintah bebas untuk Claude tidak tersedia di versi lokal.";
 };
 
-/* ---- Backup dan restore ---- */
+/* ---- Backup, Google Drive (lewat Bagikan), backup otomatis, restore ---- */
+var autoT=null;
+function autoOn(){try{return localStorage.getItem("rk-auto")!=="off"}catch(e){return true}}
+async function snapshot(){var items=await kvAll(""),o={app:"rekapyuk",v:1,at:new Date().toISOString(),items:{}};items.forEach(function(it){o.items[it.key]=it.val});return{n:items.length,json:JSON.stringify(o)}}
+function stamp(){return new Date().toLocaleString("id-ID")}
+function markBackup(){try{localStorage.setItem("rk-lastbk",stamp())}catch(e){}}
+function paintAuto(){
+  var el=document.getElementById("bkAuto");if(!el)return;
+  var st=null;try{st=JSON.parse(localStorage.getItem("rk-autost")||"null")}catch(e){}
+  el.textContent=!autoOn()?"Backup otomatis ke folder: mati.":st?(st.ok?"Salinan otomatis terakhir: "+st.at+" (Documents/rekapyuk/rekapyuk-backup-terbaru.json)":"Backup otomatis ke folder gagal ("+st.at+"): "+st.err+". Pakai tombol Kirim ke Google Drive."):"Backup otomatis ke folder: menunggu penyimpanan pertama.";
+  el.style.color=st&&!st.ok&&autoOn()?"var(--neg)":"";
+}
+async function autoBackup(){
+  var FS=plug("Filesystem");if(!NATIVE||!FS||!autoOn())return;
+  var st;
+  try{
+    var s=await snapshot();
+    await FS.writeFile({path:"rekapyuk/rekapyuk-backup-terbaru.json",data:s.json,directory:"DOCUMENTS",encoding:"utf8",recursive:true});
+    st={ok:true,at:stamp()};
+  }catch(e){st={ok:false,at:stamp(),err:String(e&&e.message||e).slice(0,90)}}
+  try{localStorage.setItem("rk-autost",JSON.stringify(st))}catch(e){}
+  paintAuto();
+}
+function scheduleAuto(){if(!NATIVE||!autoOn())return;clearTimeout(autoT);autoT=setTimeout(autoBackup,2500)}
 function initBackup(){
   var box=document.getElementById("bkBox");if(!box)return;
-  var msg=document.createElement("p");msg.className="m";msg.setAttribute("role","status");
+  function el(t,p,x){var e=document.createElement(t);if(p)for(var k in p){if(k==="text")e.textContent=p[k];else e[k]=p[k]}if(x)x.forEach(function(c){e.append(c)});return e}
+  var msg=el("p",{className:"m"});msg.setAttribute("role","status");
+  function say2(t,ok){msg.textContent=t;msg.style.color=ok?"var(--pos)":"var(--neg)"}
   var last="";try{last=localStorage.getItem("rk-lastbk")||""}catch(e){}
   msg.textContent=last?"Backup terakhir: "+last:"Belum pernah backup.";
-  var b1=document.createElement("button");b1.className="w";b1.textContent="Backup data (.json)";
-  b1.onclick=async function(){
+  var intro=el("p",{className:"m",text:NATIVE?"Data disimpan di dalam aplikasi ini. Salinan otomatis juga ditulis ke folder Documents/rekapyuk setiap kali kamu menyimpan. Untuk Google Drive, tekan tombol di bawah lalu pilih Drive.":"Data disimpan di HP ini (di dalam browser). Kalau data browser dihapus atau ganti HP, data hilang. Backup rutin, misalnya tiap kali selesai rekap."});
+  var bDrive=el("button",{className:"w",textContent:"Kirim backup ke Google Drive"});
+  bDrive.onclick=async function(){
+    bDrive.disabled=true;
     try{
-      var items=await kvAll(""),o={app:"rekapyuk",v:1,at:new Date().toISOString(),items:{}};
-      items.forEach(function(it){o.items[it.key]=it.val});
-      saveBlob("rekapyuk-backup-"+new Date().toISOString().slice(0,10)+".json",new Blob([JSON.stringify(o)],{type:"application/json"}));
-      var s=new Date().toLocaleString("id-ID");try{localStorage.setItem("rk-lastbk",s)}catch(e){}
-      msg.textContent="Backup tersimpan di folder Download. "+items.length+" bagian data.";msg.style.color="var(--pos)";
-    }catch(e){msg.textContent="Backup gagal.";msg.style.color="var(--neg)"}
+      var s=await snapshot(),day=new Date().toISOString().slice(0,10);
+      if(NATIVE){
+        var r=await saveBlob("rekapyuk-backup-"+day+".json",new Blob([s.json],{type:"application/json"}),{dialog:"Simpan backup ke Google Drive"});
+        if(r.shared){markBackup();say2("Lembar Bagikan dibuka. Pilih Drive dan simpan. "+(r.path?"Salinan juga ada di "+r.path+".":""),true)}
+        else if(r.canceled){say2("Dibatalkan."+(r.path?" Salinan sudah ada di "+r.path+".":""),!!r.path)}
+        else say2("Lembar Bagikan gagal dibuka."+(r.path?" Salinan ada di "+r.path+", unggah ke Drive dari aplikasi Drive.":""),false);
+      }else{
+        var f=new File([s.json],"rekapyuk-backup-"+day+".txt",{type:"text/plain"});
+        if(navigator.canShare&&navigator.canShare({files:[f]})){
+          try{await navigator.share({files:[f],title:"Backup rekapyuk"});markBackup();say2("Lembar Bagikan dibuka. Pilih Drive dan simpan.",true)}
+          catch(e){if(e&&e.name==="AbortError")say2("Dibatalkan.",false);else throw e}
+        }else{
+          await saveBlob(f.name,f);markBackup();
+          say2("Browser ini tidak bisa membagikan file langsung. File diunduh ke folder Download. Buka aplikasi Drive dan unggah file itu.",true);
+        }
+      }
+    }catch(e){say2("Backup gagal: "+String(e&&e.message||e).slice(0,80),false)}
+    bDrive.disabled=false;
   };
-  var lb=document.createElement("label");lb.textContent="Restore dari file backup (menimpa semua data di HP ini)";
-  var fi=document.createElement("input");fi.type="file";fi.accept=".json,application/json";
+  var bFile=el("button",{className:"w",textContent:NATIVE?"Simpan salinan ke folder sekarang":"Unduh backup (.json)"});
+  bFile.onclick=async function(){
+    try{
+      var s=await snapshot(),r=await saveBlob("rekapyuk-backup-"+new Date().toISOString().slice(0,10)+".json",new Blob([s.json],{type:"application/json"}),{share:false});
+      markBackup();say2(r.path?"Tersimpan di "+r.path+". "+s.n+" bagian data.":"Backup tersimpan di folder Download. "+s.n+" bagian data.",true);
+    }catch(e){say2("Backup gagal: "+String(e&&e.message||e).slice(0,80),false)}
+  };
+  var lb=el("label",{textContent:"Restore dari file backup (menimpa semua data di sini)"});
+  var fi=el("input",{type:"file"});
   fi.onchange=async function(){
     var f=fi.files[0];if(!f)return;
     try{
       var o=JSON.parse(await f.text());
       if(!o||o.app!=="rekapyuk"||!o.items)throw 0;
-      if(!confirm("Data di HP ini akan diganti dengan isi backup. Lanjutkan?")){fi.value="";return}
+      if(!confirm("Data di sini akan diganti dengan isi backup. Lanjutkan?")){fi.value="";return}
       await kvClear();var ks=Object.keys(o.items);
       for(var i=0;i<ks.length;i++)await kvSet(ks[i],o.items[ks[i]]);
       location.reload();
-    }catch(e){msg.textContent="File backup tidak valid.";msg.style.color="var(--neg)";fi.value=""}
+    }catch(e){say2("File backup tidak valid.",false);fi.value=""}
   };
-  var p=document.createElement("p");p.className="m";
-  p.textContent="Data disimpan di HP ini (di dalam browser). Kalau data browser dihapus atau ganti HP, data hilang. Backup rutin, misalnya tiap kali selesai rekap.";
-  var t=document.createElement("b");t.textContent="Backup dan restore";
-  box.append(t,p,b1,msg,lb,fi);
+  var kids=[el("b",{textContent:"Backup dan restore"}),intro,bDrive,bFile,msg];
+  if(NATIVE){
+    var auto=el("p",{className:"m"});auto.id="bkAuto";
+    var cbw=el("label",{style:"display:flex;gap:8px;align-items:center;color:var(--tx);font-size:14px"});
+    var cb=el("input",{type:"checkbox"});cb.checked=autoOn();
+    cb.onchange=function(){try{localStorage.setItem("rk-auto",cb.checked?"on":"off")}catch(e){}paintAuto();if(cb.checked)scheduleAuto()};
+    cbw.append(cb,el("span",{text:"Backup otomatis ke folder setiap menyimpan"}));
+    kids.push(cbw,auto);
+  }
+  kids.push(lb,fi);
+  kids.forEach(function(k){box.append(k)});
+  paintAuto();
+  if(NATIVE)setTimeout(autoBackup,4000);
   if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(function(){})}
 }
 initBackup();
@@ -605,7 +681,7 @@ function show(v){view=v;["up","tx","rev","bal","dev","set"].forEach(function(k){
 
 async function persist(ym){if(!db)return;try{if(ym)await db.doc(base+"/m-"+ym).set({rows:months[ym]});await db.doc(base+"/config").set(cfg)}catch(e){say("Gagal menyimpan ke penyimpanan.")}}
 
-var PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+var PDFJS=window.RK_PDFJS||"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
 function loadPdf(){return new Promise(function(res,rej){
   function ready(){var t=0;(function w(){if(window.pdfjsLib){try{pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js"}catch(e){}res(window.pdfjsLib)}else if(t++>50)rej({code:"pdf_lib"});else setTimeout(w,100)})()}
   if(window.pdfjsLib)return ready();
@@ -1046,7 +1122,7 @@ $("dl").onclick=async function(){
   for(var j=2;j<=ba.length;j++){ws2["B"+j].z="#,##0";ws2["C"+j].z="#,##0"}
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Transaksi");XLSX.utils.book_append_sheet(wb,ws2,"Rekening");
   var buf=XLSX.write(wb,{type:"array",bookType:"xlsx",cellDates:true});
-  try{await dlc.save({filename:"rekap-keuangan.xlsx",data:buf});m.textContent="File siap."}
+  try{var sr=await dlc.save({filename:"rekap-keuangan.xlsx",data:buf});m.textContent=sr&&sr.path?"File siap. Salinan ada di "+sr.path+".":"File siap."}
   catch(e){m.textContent=e&&e.code==="declined"?"Unduhan dibatalkan.":"Gagal menyiapkan unduhan."}
 };
 /* ===== Mode Developer: tombol buatan sendiri ===== */
@@ -1341,6 +1417,6 @@ function renderRv(){
 }
 init();
 </script>
-<script>if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){navigator.serviceWorker.register("sw.js").catch(function(){})}</script>
+<script>if("serviceWorker" in navigator&&!window.RK_APK&&/^https?:$/.test(location.protocol)){navigator.serviceWorker.register("sw.js").catch(function(){})}</script>
 </body>
 </html>

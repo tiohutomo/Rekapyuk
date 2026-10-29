@@ -1,0 +1,78 @@
+name: Bangun APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "apk/**"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Pasang pustaka
+        working-directory: apk
+        run: npm install --no-audit --no-fund
+
+      - name: Siapkan berkas web
+        working-directory: apk
+        run: node prepare.js
+
+      - name: Uji asap (OCR dan pustaka lokal)
+        working-directory: apk
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+          python3 -m http.server 8080 --directory www > /dev/null 2>&1 &
+          sleep 2
+          node smoke.js
+
+      - name: Tambah proyek Android
+        working-directory: apk
+        run: |
+          npx cap add android
+          RUN_NUMBER=${{ github.run_number }} node patch-android.js
+          npx cap sync android
+
+      - name: Bangun APK
+        working-directory: apk/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Kumpulkan APK
+        run: |
+          ls -la apk/android/app/build/outputs/apk/release/
+          cp apk/android/app/build/outputs/apk/release/app-release.apk rekapyuk.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rekapyuk-apk
+          path: rekapyuk.apk
+
+      - name: Terbitkan di Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete apk-terbaru --cleanup-tag --yes || true
+          gh release create apk-terbaru rekapyuk.apk \
+            --target "${{ github.sha }}" \
+            --title "rekapyuk APK (build #${{ github.run_number }})" \
+            --notes "APK rekapyuk build #${{ github.run_number }}. Unduh rekapyuk.apk di bawah, lalu pasang di HP Android. Aplikasi ini tidak berisi data keuanganmu."
