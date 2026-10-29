@@ -35,6 +35,15 @@ jobs:
         working-directory: apk
         run: node prepare.js
 
+      - name: Uji asap (OCR dan pustaka lokal)
+        working-directory: apk
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+          python3 -m http.server 8080 --directory www > /dev/null 2>&1 &
+          sleep 2
+          node smoke.js
+
       - name: Tambah proyek Android
         working-directory: apk
         run: |

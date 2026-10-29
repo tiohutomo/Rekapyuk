@@ -426,7 +426,7 @@ async function getOcr(){
   var L=window.RK_TESS,tb=L?new URL(L,location.href).href:"https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/";
   if(!window.Tesseract)await loadScript(tb+"tesseract.min.js");
   try{
-    var opt=L?{workerPath:tb+"worker.min.js",corePath:tb,langPath:tb+"lang/",gzip:true,workerBlobURL:false}:{};
+    var opt=L?{workerPath:tb+"worker.min.js",corePath:tb,langPath:tb+"lang/",gzip:false,workerBlobURL:false}:{};
     var w=await Tesseract.createWorker("eng",1,opt);
     try{await w.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1"})}catch(e){}
     ocrW=w;return w;

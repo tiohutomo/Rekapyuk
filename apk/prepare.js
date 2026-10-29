@@ -53,6 +53,8 @@ const dataRoot = must(path.join(nm, "@tesseract.js-data/eng"));
 const cands = ["4.0.0_best_int", "4.0.0", "4.0.0_fast"].map((d) => path.join(dataRoot, d, "eng.traineddata.gz"));
 const lang = cands.find((p) => fs.existsSync(p));
 if (!lang) throw new Error("eng.traineddata.gz tidak ditemukan di " + dataRoot);
-copy(lang, path.join(www, "libs/tesseract/lang/eng.traineddata.gz"));
+// Disimpan tanpa .gz: build Android otomatis membongkar berkas .gz dan menghapus ekstensinya.
+fs.mkdirSync(path.join(www, "libs/tesseract/lang"), { recursive: true });
+fs.writeFileSync(path.join(www, "libs/tesseract/lang/eng.traineddata"), require("zlib").gunzipSync(fs.readFileSync(lang)));
 
 console.log("www siap. Berkas inti OCR:", cores.join(", "));
