@@ -1,0 +1,18 @@
+{
+  "name": "rekapyuk-apk",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pembungkus Android (Capacitor) untuk rekapyuk",
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.2",
+    "@capacitor/share": "^6.0.3",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "pdfjs-dist": "3.11.174",
+    "tesseract.js": "^5.1.1",
+    "tesseract.js-core": "^5.1.1",
+    "xlsx": "0.18.5"
+  }
+}

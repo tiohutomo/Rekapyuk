@@ -1,0 +1,6 @@
+{
+  "appId": "com.tiohutomo.rekapyuk",
+  "appName": "rekapyuk",
+  "webDir": "www",
+  "server": { "androidScheme": "https" }
+}
