@@ -772,7 +772,9 @@ function renderRev(){
     var st=p.sel?"good":"bad";
     var cb=h("input",{type:"checkbox","aria-label":"Siap disimpan"});cb.checked=p.sel;cb.disabled=!ok;
     cb.onchange=function(){p.sel=cb.checked;renderRev()};
-    var top=h("div",{class:"top"},h("div",{class:"top"},cb,h("div",{},h("div",{text:p.ket||"(tanpa keterangan)"}),h("div",{class:"m",text:fd(p.t)}))),h("div",{class:"amt "+(p.arah==="masuk"?"in":"out"),text:(p.arah==="masuk"?"+":"-")+rp(p.n)}));
+    if(p.ket0==null)p.ket0=p.ket;
+    var hd=h("div",{text:p.ket||"(tanpa keterangan)"});
+    var top=h("div",{class:"top"},h("div",{class:"top"},cb,h("div",{},hd,h("div",{class:"m",text:fd(p.t)}))),h("div",{class:"amt "+(p.arah==="masuk"?"in":"out"),text:(p.arah==="masuk"?"+":"-")+rp(p.n)}));
     var msg=!ok?(p.j==="Balance"?"Perlu dikelompokkan: pilih rekening lawan transfer":"Perlu dikelompokkan: pilih kategori"):p.sel?"Sudah dikelompokkan, siap disimpan":(p.dup?"Mungkin dobel: centang untuk tetap simpan, atau Buang":"Belum dicentang: centang untuk disimpan, atau Buang");
     var it=h("div",{class:"it rv "+st},top,h("div",{class:"rvs",text:msg}));
     var r=h("div",{class:"row2"});
@@ -781,8 +783,13 @@ function renderRev(){
     else r.append(sel([""].concat(withCur(katFor(p.j,p.t.slice(0,7)),p.k)),p.k,function(v){p.k=v;p.sel=!!v&&!p.dup;renderRev()}));
     it.append(r);
     if(p.j==="Balance")it.append(h("div",{class:"m",text:"Kanan: rekening lawan transfer"}));
-    var di=h("input",{placeholder:"Deskripsi sendiri (opsional), misal: makan siang kantor","aria-label":"Deskripsi",style:"margin-top:8px",value:p.desc||""});
-    di.oninput=function(){p.desc=di.value};it.append(di);
+    var pv=h("div",{class:"m",style:"margin-top:6px"});
+    function upPv(){var x=combineDesc(p.ket,p.desc);pv.textContent="Deskripsi di rekap: "+(x||"(kosong)");hd.textContent=p.ket||"(tanpa keterangan)"}
+    var ki=h("input",{placeholder:"Teks hasil bacaan (bisa diedit)","aria-label":"Teks hasil bacaan",style:"margin-top:8px",value:p.ket||""});
+    ki.oninput=function(){p.ket=ki.value;upPv()};
+    var di=h("input",{placeholder:"Catatan sendiri (opsional), misal: makan siang kantor","aria-label":"Catatan sendiri",style:"margin-top:8px",value:p.desc||""});
+    di.oninput=function(){p.desc=di.value;upPv()};
+    it.append(h("label",{text:"Teks hasil bacaan (bisa diedit)"}),ki,h("label",{text:"Catatan sendiri (ditambahkan di sampingnya)"}),di,pv);upPv();
     if(p.open){
       var ti=h("input",{type:"date",value:p.t,"aria-label":"Tanggal"});ti.onchange=function(){if(/^\d{4}-\d{2}-\d{2}$/.test(ti.value))p.t=ti.value;renderRev()};
       var ni=h("input",{type:"number",value:p.n,"aria-label":"Jumlah"});ni.onchange=function(){var v=Math.round(Number(ni.value));if(v>0)p.n=v;else sm("Jumlah harus lebih dari 0.",false);renderRev()};
@@ -816,14 +823,14 @@ $("save").onclick=async function(){
     if(p.j==="Balance"){
       if(!p.tuj){skipped++;return}
       var asal=p.arah==="keluar"?p.rek:p.tuj,tuj=p.arah==="keluar"?p.tuj:p.rek;
-      var g=gid(),dd=(p.desc||"").trim();
-      var rA={t:p.t,j:"Balance",k:"",n:-p.n,r:asal,d:dd||p.ket||"transfer ke "+tuj,b:p.ket,g:g},rB={t:p.t,j:"Balance",k:"",n:p.n,r:tuj,d:dd||p.ket||"transfer dari "+asal,b:p.ket,g:g};
+      var g=gid(),dd=combineDesc(p.ket,p.desc),bk=p.ket0!=null?p.ket0:p.ket;
+      var rA={t:p.t,j:"Balance",k:"",n:-p.n,r:asal,d:dd||"transfer ke "+tuj,b:bk,g:g},rB={t:p.t,j:"Balance",k:"",n:p.n,r:tuj,d:dd||"transfer dari "+asal,b:bk,g:g};
       if(asal!==p.rek)rA.c=1;if(tuj!==p.rek)rB.c=1;rows.push(rA,rB);
-    }else rows.push({t:p.t,j:p.j,k:p.k,n:p.n,r:p.rek,d:(p.desc||"").trim()||p.ket,b:p.ket});
+    }else rows.push({t:p.t,j:p.j,k:p.k,n:p.n,r:p.rek,d:combineDesc(p.ket,p.desc),b:p.ket0!=null?p.ket0:p.ket});
     if(p.man)rows.forEach(function(x){x.c=1});
     rows.forEach(function(r){var ym=r.t.slice(0,7);(months[ym]=months[ym]||[]).push(r);touched[ym]=1});
     added++;
-    var rkey=p.j!=="Balance"?ruleKey(p.ket):null;if(rkey)cfg.rules[rkey]=[p.j,p.k];
+    var rkey=p.j!=="Balance"?ruleKey(p.ket0!=null?p.ket0:p.ket):null;if(rkey)cfg.rules[rkey]=[p.j,p.k];
   });
   var keys=Object.keys(touched);
   if(!keys.length){return say(skipped?"Pilih rekening lawan untuk transfer (Balance) dulu.":"Tidak ada yang dicentang.")}
@@ -957,6 +964,7 @@ function renderGs(rows){
     h("label",{style:"display:flex;gap:8px;align-items:center;color:var(--tx);font-size:14px"},cb,h("span",{text:"Hanya yang belum ada di Sheets"})),
     kb,rs,o2));
 }
+function combineDesc(a,b){a=(a||"").trim();b=(b||"").trim();return a&&b?a+" - "+b:(a||b)}
 function gid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function partner(r){var a=allRows();if(r.g)return a.filter(function(x){return x!==r&&x.g===r.g})[0]||null;
   var c=a.filter(function(x){return x!==r&&x.j==="Balance"&&!x.g&&x.t===r.t&&x.n===-r.n});return c.filter(function(x){return x.d===r.d})[0]||c[0]||null}
