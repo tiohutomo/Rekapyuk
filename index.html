@@ -842,7 +842,7 @@ function build(arr,rek){
   var nd=pending.filter(function(p){return !ready(p)}).length;
   say("Terbaca "+pending.length+" transaksi."+(nd?" "+nd+" perlu kamu kelompokkan manual (warna merah).":" Semua sudah dikelompokkan, cek lalu simpan."),!nd);
 }
-function ready(p){return p.j==="Balance"?!!p.tuj:!!p.k}
+function ready(p){return p.j==="Balance"?(p.lawan===false||!!p.tuj):!!p.k}
 function renderRev(){
   var l=$("revList");l.innerHTML="";
   if(!pending.length){$("rev").hidden=true;$("files").value="";return}
@@ -855,14 +855,18 @@ function renderRev(){
     if(p.ket0==null)p.ket0=p.ket;
     var hd=h("div",{text:p.ket||"(tanpa keterangan)"});
     var top=h("div",{class:"top"},h("div",{class:"top"},cb,h("div",{},hd,h("div",{class:"m",text:fd(p.t)}))),h("div",{class:"amt "+(p.arah==="masuk"?"in":"out"),text:(p.arah==="masuk"?"+":"-")+rp(p.n)}));
-    var msg=!ok?(p.j==="Balance"?"Perlu dikelompokkan: pilih rekening lawan transfer":"Perlu dikelompokkan: pilih kategori"):p.sel?"Sudah dikelompokkan, siap disimpan":(p.dup?"Mungkin dobel: centang untuk tetap simpan, atau Buang":"Belum dicentang: centang untuk disimpan, atau Buang");
+    var msg=!ok?(p.j==="Balance"?"Perlu dikelompokkan: pilih rekening lawan, atau hilangkan centang catat di rekening lawan":"Perlu dikelompokkan: pilih kategori"):p.sel?"Sudah dikelompokkan, siap disimpan":(p.dup?"Mungkin dobel: centang untuk tetap simpan, atau Buang":"Belum dicentang: centang untuk disimpan, atau Buang");
     var it=h("div",{class:"it rv "+st},top,h("div",{class:"rvs",text:msg}));
     var r=h("div",{class:"row2"});
     r.append(sel(J,p.j,function(v){p.j=v;p.k="";p.sel=false;renderRev()}));
-    if(p.j==="Balance")r.append(sel([""].concat(withCur(accFor(p.t.slice(0,7)),p.tuj).filter(function(n){return n!==p.rek})),p.tuj,function(v){p.tuj=v;p.sel=!!v&&!p.dup;renderRev()}));
+    if(p.j==="Balance"&&p.lawan!==false)r.append(sel([""].concat(withCur(accFor(p.t.slice(0,7)),p.tuj).filter(function(n){return n!==p.rek})),p.tuj,function(v){p.tuj=v;p.sel=!!v&&!p.dup;renderRev()}));
     else r.append(sel([""].concat(withCur(katFor(p.j,p.t.slice(0,7)),p.k)),p.k,function(v){p.k=v;p.sel=!!v&&!p.dup;renderRev()}));
     it.append(r);
-    if(p.j==="Balance")it.append(h("div",{class:"m",text:"Kanan: rekening lawan transfer"}));
+    if(p.j==="Balance"){
+      var lw=h("input",{type:"checkbox","aria-label":"Catat juga di rekening lawan"});lw.checked=p.lawan!==false;
+      lw.onchange=function(){p.lawan=lw.checked;p.sel=ready(p)&&!p.dup;renderRev()};
+      it.append(h("label",{style:"display:flex;gap:8px;align-items:center;color:var(--tx);font-size:14px;margin-top:8px"},lw,h("span",{text:"Catat juga di rekening lawan (debit/kredit)"})),
+        h("div",{class:"m",text:p.lawan!==false?"Kanan: rekening lawan transfer. Transfer dicatat di 2 rekening.":"Tidak dicentang: hanya dicatat di rekening "+p.rek+" ("+(p.arah==="masuk"?"masuk":"keluar")+" "+rp(p.n)+"), rekening lawan tidak diubah."}))}
     var pv=h("div",{class:"m",style:"margin-top:6px"});
     function upPv(){var x=(p.desc||"").trim();pv.textContent="Deskripsi di rekap: "+(x||"(kosong)")}
     var di=h("input",{placeholder:"Deskripsi (diisi sendiri), misal: makan siang kantor","aria-label":"Catatan sendiri",style:"margin-top:8px",value:p.desc||""});
@@ -899,11 +903,16 @@ $("save").onclick=async function(){
     if(!p.sel)return;
     var rows=[];
     if(p.j==="Balance"){
+      if(p.lawan===false){
+        var d1=(p.desc||"").trim(),r1={t:p.t,j:"Balance",k:"",n:p.arah==="keluar"?-p.n:p.n,r:p.rek,d:d1||(p.arah==="keluar"?"transfer keluar":"transfer masuk"),b:p.ket0!=null?p.ket0:p.ket};
+        rows.push(r1);
+      }else{
       if(!p.tuj){skipped++;return}
       var asal=p.arah==="keluar"?p.rek:p.tuj,tuj=p.arah==="keluar"?p.tuj:p.rek;
       var g=gid(),dd=(p.desc||"").trim(),bk=p.ket0!=null?p.ket0:p.ket;
       var rA={t:p.t,j:"Balance",k:"",n:-p.n,r:asal,d:dd||"transfer ke "+tuj,b:bk,g:g},rB={t:p.t,j:"Balance",k:"",n:p.n,r:tuj,d:dd||"transfer dari "+asal,b:bk,g:g};
       if(asal!==p.rek)rA.c=1;if(tuj!==p.rek)rB.c=1;rows.push(rA,rB);
+      }
     }else rows.push({t:p.t,j:p.j,k:p.k,n:p.n,r:p.rek,d:(p.desc||"").trim(),b:p.ket0!=null?p.ket0:p.ket});
     if(p.man)rows.forEach(function(x){x.c=1});
     rows.forEach(function(r){var ym=r.t.slice(0,7);(months[ym]=months[ym]||[]).push(r);touched[ym]=1});
@@ -913,7 +922,7 @@ $("save").onclick=async function(){
   var keys=Object.keys(touched);
   if(!keys.length){return say(skipped?"Pilih rekening lawan untuk transfer (Balance) dulu.":"Tidak ada yang dicentang.")}
   for(var i=0;i<keys.length;i++)await persist(keys[i]);
-  pending=pending.filter(function(p){return !p.sel||(p.j==="Balance"&&!p.tuj)});
+  pending=pending.filter(function(p){return !p.sel||(p.j==="Balance"&&p.lawan!==false&&!p.tuj)});
   say(added+" transaksi tersimpan."+(skipped?" "+skipped+" transfer belum punya rekening lawan.":""),true);
   renderRev();
 };
@@ -1084,7 +1093,7 @@ function partner(r){var a=allRows();if(r.g)return a.filter(function(x){return x!
   var c=a.filter(function(x){return x!==r&&x.j==="Balance"&&!x.g&&x.t===r.t&&x.n===-r.n});return c.filter(function(x){return x.d===r.d})[0]||c[0]||null}
 function rmRow(r,tch){var ym=r.t.slice(0,7);if(months[ym]){months[ym]=months[ym].filter(function(x){return x!==r});tch[ym]=1}}
 async function saveMonths(tch){var ks=Object.keys(tch);for(var i=0;i<ks.length;i++)await persist(ks[i])}
-function delTx(r){var tch={},pt=r.j==="Balance"?partner(r):null;rmRow(r,tch);if(pt)rmRow(pt,tch);if(txEdit===r)txEdit=null;renderTx();sm(pt?"Transfer dihapus (kedua sisinya).":"Transaksi dihapus.",true);saveMonths(tch)}
+function delTx(r){var tch={},pt=r.j==="Balance"?partner(r):null;rmRow(r,tch);if(txEdit===r)txEdit=null;renderTx();sm(pt?"Hanya baris ini yang dihapus. Sisi lawan transfer ("+pt.r+") tetap ada.":"Transaksi dihapus.",true);saveMonths(tch)}
 function txEditor(r){
   var pt=r.j==="Balance"?partner(r):null,accs=cfg.acc.filter(function(a){return actIn(a,r.t.slice(0,7))||a.n===r.r||(pt&&a.n===pt.r)}).map(function(a){return a.n});
   var st={t:r.t,j:r.j,k:r.k||"",n:Math.abs(r.n),d:r.d||"",rek:r.r,from:"",to:""};
@@ -1340,7 +1349,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v11 (kirim Sheets via GET)";
+var APP_VER="v12 (balance satu sisi, hapus satu sisi)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
