@@ -15,7 +15,7 @@ function doGet(e) {
     catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
   }
   var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);
-  return json_(sh ? { ok: true, versi: 3, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
+  return json_(sh ? { ok: true, versi: 4, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
 }
 
 function doPost(e) {
@@ -40,7 +40,7 @@ function tambah_(rows) {
   var last = 0, have = {};
   for (var i = 0; i < vals.length; i++) {
     var v = vals[i];
-    if (v[0] === '') continue; // baris terakhir ditentukan kolom Tanggal saja
+    if (v[0] === '' || v[3] === '') continue; // baris dianggap terisi kalau Tanggal dan Jumlah ada; baris setengah jadi akan ditimpa
     last = i + 1;
     if (v[0] instanceof Date) {
       var k = [Utilities.formatDate(v[0], tz, 'yyyy-MM-dd'), String(v[1]).trim(), Number(v[3]), String(v[4]).trim()].join('|');
@@ -57,17 +57,25 @@ function tambah_(rows) {
   var start = from + last;
   if (send.length) {
     if (start + send.length - 1 > sh.getMaxRows()) return { ok: false, error: 'Baris di tab Transaksi tidak cukup.' };
-    var main = [], desc = [];
+    var ab = [], cc = [], desc = [];
     send.forEach(function (r) {
       var p = r.t.split('-');
-      main.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j, r.k || '', Number(r.n), r.r]);
+      ab.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j]);
+      cc.push([r.k || '', Number(r.n), r.r]);
       desc.push([r.d || '']);
     });
-    // Dua blok terpisah supaya kolom rumus di antaranya tidak tertimpa
     try {
-      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 5).setValues(main);
+      // Dropdown Kategori bergantung pada kolom Transaksi, jadi tulis dua tahap:
+      // 1) Tanggal + Transaksi, 2) Kategori + Jumlah + Rekening (setelah daftar kategori baris itu terbentuk).
+      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 2).setValues(ab);
+      SpreadsheetApp.flush();
+      var tulis2 = function () {
+        sh.getRange(start, CONFIG.COL_TANGGAL + 2, send.length, 3).setValues(cc);
+        SpreadsheetApp.flush();
+      };
+      try { tulis2(); } catch (e1) { Utilities.sleep(1500); tulis2(); }
       sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);
-      SpreadsheetApp.flush(); // paksa galat validasi muncul di sini supaya bisa ditangkap
+      SpreadsheetApp.flush();
     } catch (err) {
       return { ok: false, error: 'Gagal menulis mulai baris ' + start + ': ' + String(err && err.message || err) };
     }
