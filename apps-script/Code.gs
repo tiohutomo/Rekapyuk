@@ -15,7 +15,7 @@ function doGet(e) {
     catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
   }
   var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);
-  return json_(sh ? { ok: true, versi: 2, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
+  return json_(sh ? { ok: true, versi: 3, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
 }
 
 function doPost(e) {
@@ -40,7 +40,7 @@ function tambah_(rows) {
   var last = 0, have = {};
   for (var i = 0; i < vals.length; i++) {
     var v = vals[i];
-    if (v[0] === '' && v[1] === '') continue;
+    if (v[0] === '') continue; // baris terakhir ditentukan kolom Tanggal saja
     last = i + 1;
     if (v[0] instanceof Date) {
       var k = [Utilities.formatDate(v[0], tz, 'yyyy-MM-dd'), String(v[1]).trim(), Number(v[3]), String(v[4]).trim()].join('|');
@@ -64,8 +64,13 @@ function tambah_(rows) {
       desc.push([r.d || '']);
     });
     // Dua blok terpisah supaya kolom rumus di antaranya tidak tertimpa
-    sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 5).setValues(main);
-    sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);
+    try {
+      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 5).setValues(main);
+      sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);
+      SpreadsheetApp.flush(); // paksa galat validasi muncul di sini supaya bisa ditangkap
+    } catch (err) {
+      return { ok: false, error: 'Gagal menulis mulai baris ' + start + ': ' + String(err && err.message || err) };
+    }
   }
   return { ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 };
 }
