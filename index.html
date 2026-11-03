@@ -915,7 +915,7 @@ function renderRev(){
   }
   pending.forEach(function(p,idx){
     var ok=ready(p);if(!ok)p.sel=false;
-    var st=p.sel?"good":"bad";
+    var st=p.sel?"good":(p.dup?"warn":"bad");
     var cb=h("input",{type:"checkbox","aria-label":"Siap disimpan"});cb.checked=p.sel;cb.disabled=!ok;
     cb.onchange=function(){p.sel=cb.checked;renderRev()};
     if(p.ket0==null)p.ket0=p.ket;
@@ -1391,7 +1391,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v17 (ringkasan Review hidup)";
+var APP_VER="v19 (sudah terekap = kuning)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
