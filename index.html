@@ -233,6 +233,7 @@ function defYear(){return new Date().getFullYear()}
 /* Cari tanggal pada satu baris. Mengembalikan {iso, rest} atau null. */
 function findDate(s,opts){
   var m,y;
+  s=s.replace(/(\d{1,2})\s*0(kt|ct)\b/gi,"$1 Okt").replace(/\bN0v/gi,"Nov");
   if((m=s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/))&&okDate(+m[1],+m[2],+m[3]))return{iso:iso(+m[1],+m[2],+m[3]),rest:s.replace(m[0]," ")};
   if((m=s.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4}|\d{2})\b/))){
     y=+m[3];if(y<100)y+=2000;
@@ -250,12 +251,12 @@ function findDate(s,opts){
 }
 
 /* Cari semua angka rupiah pada satu baris. */
-var AMT=/([+\-−–])?\s*(rp\.?\s*)?([+\-−–])?\s*(\d{1,3}(?:[.,]\d{3})+(?:[.,]?\d{2}|\s00)?|\d+(?:[.,]\d{1,2})?)(?!\d)/gi;
+var AMT=/([+\-−–])?\s*(rp\.?\s*)?([+\-−–])?\s*(\d{1,3}(?:[.,]\d{3})+(?:[.,]?\d{1,2}|\s00)?|\d+(?:[.,]\d{1,2})?)(?!\d)/gi;
 function findAmounts(s){
   var out=[],m;AMT.lastIndex=0;
   while((m=AMT.exec(s))){
     var body=m[4],hasRp=!!m[2],sign=m[1]||m[3]||"",val=null;
-    var th=body.match(/^(\d{1,3}(?:[.,]\d{3})+)(?:[.,]?(\d{2})|\s00)?$/);
+    var th=body.match(/^(\d{1,3}(?:[.,]\d{3})+)(?:[.,]?(\d{1,2})|\s00)?$/);
     if(th)val=Number(th[1].replace(/[.,]/g,""));
     else if(hasRp||(sign&&body.replace(/\D/g,"").length>=4)){val=Math.round(Number(body.replace(",",".")))}
     if(val==null||!(val>=0))continue;
@@ -288,7 +289,7 @@ function direction(line,sign){
   return"keluar";
 }
 function cleanDesc(s){
-  return String(s||"").replace(/^\S{1,2}\)\s+/,"").replace(/\d{1,2}:\d{2}(:\d{2})?/g," ").replace(/\b\d{8,}\b/g," ").replace(/(rp\.?\s*)?[+\-]?\s*\d{1,3}([.,]\d{3})+([.,]?\d{2})?/gi," ").replace(/[|]+/g," ").replace(/\s+-\s*$/,"").replace(/\s+(db|cr|dr|kr)$/i,"").replace(/^[\s\-:.,]+|[\s\-:.,]+$/g,"").replace(/\s+/g," ").trim().slice(0,70);
+  return String(s||"").replace(/^[^\p{L}\p{N}]+/u,"").replace(/^\S{1,2}\)\s+/,"").replace(/\d{1,2}:\d{2}(:\d{2})?/g," ").replace(/\b\d{8,}\b/g," ").replace(/(rp\.?\s*)?[+\-]?\s*\d{1,3}([.,]\d{3})+([.,]?\d{2})?/gi," ").replace(/[|]+/g," ").replace(/\s+-\s*$/,"").replace(/\s+(db|cr|dr|kr)$/i,"").replace(/^[\s\-:.,]+|[\s\-:.,]+$/g,"").replace(/\s+/g," ").trim().slice(0,70);
 }
 
 /* ---- Mode baris (teks PDF atau hasil OCR) ---- */
