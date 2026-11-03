@@ -699,7 +699,8 @@ function withCur(list,v){return v&&list.indexOf(v)<0?list.concat([v]):list}
 function ruleKey(t){var k=norm(t),core=k.replace(/\b(qris|qr|transfer|trf|bi|fast|bifast|debit|kredit|db|cr|payment|pembayaran|bayar|ke|dari|rupiah|rp|transaksi|trx)\b/g,"").replace(/[^a-z]/g,"");return core.length>=4?k:null}
 function eff(r){return r.j==="Pendapatan"?r.n:r.j==="Balance"?r.n:-r.n}
 function allRows(){var a=[];Object.keys(months).forEach(function(k){a=a.concat(months[k])});return a}
-function say(t,ok){var m=$("msg");m.textContent=t;m.style.color=ok?"var(--pos)":"var(--neg)"}
+var revSummary=false;
+function say(t,ok){revSummary=false;var m=$("msg");m.textContent=t;m.style.color=ok?"var(--pos)":"var(--neg)"}
 
 async function init(){
   var nav=$("nav");[["up","Rekap"],["tx","Transaksi"],["rev","Review"],["bal","Saldo"],["set","Setup"]].forEach(function(v){nav.append(h("button",{text:v[1],"data-v":v[0],onclick:function(){show(v[0])}}))});
@@ -890,11 +891,19 @@ function build(arr,rek){
   });
   if(!pending.length){say("Tidak ada transaksi yang terbaca. Coba screenshot yang lebih jelas.");return}
   renderRev();
-  var nd=pending.filter(function(p){return !p.dup&&!ready(p)}).length,ndup=pending.filter(function(p){return p.dup&&!p.dupU}).length,nU=pending.filter(function(p){return p.dupU}).length;
-  say("Terbaca "+pending.length+" transaksi: "+(pending.length-ndup-nU)+" baru"+(ndup?", "+ndup+" sudah terekap (tidak dicentang)":"")+(nU?", "+nU+" kembar di unggahan ini (cek sendiri)":"")+"."+(nd?" "+nd+" perlu kamu kelompokkan manual (warna merah).":(pending.length-ndup?" Semua yang baru sudah dikelompokkan, cek lalu simpan.":"")),!nd);
+  revSummary=true;showRevSummary();
+}
+function showRevSummary(){
+  var m=$("msg");
+  if(!revSummary)return;
+  if(!pending.length){m.textContent="";revSummary=false;return}
+  var nd=pending.filter(function(p){return !p.dup&&!ready(p)}).length,ndup=pending.filter(function(p){return p.dup&&!p.dupU}).length,nU=pending.filter(function(p){return p.dupU}).length,nb=pending.length-ndup-nU;
+  m.textContent="Terbaca "+pending.length+" transaksi: "+nb+" baru"+(ndup?", "+ndup+" sudah terekap (tidak dicentang)":"")+(nU?", "+nU+" kembar di unggahan ini (cek sendiri)":"")+"."+(nd?" "+nd+" perlu kamu kelompokkan manual (warna merah).":(nb?" Semua yang baru sudah dikelompokkan, cek lalu simpan.":""));
+  m.style.color=nd?"var(--neg)":"var(--pos)";
 }
 function ready(p){return p.j==="Balance"?(p.lawan===false||!!p.tuj):!!p.k}
 function renderRev(){
+  showRevSummary();
   var l=$("revList");l.innerHTML="";
   if(!pending.length){$("rev").hidden=true;$("files").value="";return}
   $("rev").hidden=false;
@@ -902,7 +911,7 @@ function renderRev(){
   if(nDup||nUp){
     l.append(h("div",{class:"edbox",style:"margin-bottom:10px"},h("b",{text:(pending.length-nDup-nUp)+" transaksi baru, "+nDup+" sudah terekap"+(nUp?", "+nUp+" kembar di unggahan ini":"")}),
       h("p",{class:"m",text:"Yang sudah terekap ditandai merah dan tidak dicentang, jadi tidak ikut tersimpan kecuali kamu centang. Yang kembar di unggahan ini bisa transaksi sungguhan (dua belanja sama di hari yang sama) atau screenshot yang tumpang tindih, jadi cek sendiri."}),
-      nDup?h("button",{class:"del",text:"Buang semua yang sudah terekap ("+nDup+")",onclick:function(){pending=pending.filter(function(p){return !p.dup||p.dupU});renderRev();say(nDup+" transaksi yang sudah terekap dibuang dari daftar.",true)}}):null));
+      nDup?h("button",{text:"Buang semua yang sudah terekap ("+nDup+")",style:"background:#f5c542;color:#2b2100;font-weight:700;margin-top:6px;min-height:42px",onclick:function(){pending=pending.filter(function(p){return !p.dup||p.dupU});revSummary=true;renderRev()}}):null));
   }
   pending.forEach(function(p,idx){
     var ok=ready(p);if(!ok)p.sel=false;
@@ -1382,7 +1391,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v16 (status cek per rekening)";
+var APP_VER="v17 (ringkasan Review hidup)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
