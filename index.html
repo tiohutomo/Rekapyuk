@@ -172,6 +172,7 @@ summary{font-weight:700;cursor:pointer;min-height:32px}
   <div class="card">
     <b>Saldo rekening</b>
     <p class="m">Saldo saat ini = saldo awal + semua transaksi yang tersimpan. Saldo awal diisi di tab Setup.</p>
+    <button class="w sec" id="balCheck">Cek saldo dengan Google Sheets</button>
     <div id="balList"></div>
   </div>
 </section>
@@ -688,7 +689,7 @@ function h(t,p){var e=document.createElement(t);p=p||{};for(var a in p){if(a==="
 function sel(opts,val,fn){var s=h("select",{});opts.forEach(function(o){var op=h("option",{value:o,text:o||"(kosong)"});s.append(op)});s.value=val;s.onchange=function(){fn(s.value)};return s}
 function fd(iso){var p=iso.split("-");return p[2]+" "+MON[+p[1]-1]+" "+p[0]}
 function r2(x){return Math.round((Number(x)||0)*100)/100}
-function rp(n){return r2(Math.abs(n)).toLocaleString("id-ID",{minimumFractionDigits:0,maximumFractionDigits:2})}
+function rp(n){var x=r2(Math.abs(n));return x.toLocaleString("id-ID",{minimumFractionDigits:x%1?2:0,maximumFractionDigits:2})}
 function norm(s){return(s||"").toLowerCase().replace(/[0-9]+/g,"").replace(/\s+/g," ").trim().slice(0,30)}
 function curYm(){var n=new Date();return n.getFullYear()+"-"+("0"+(n.getMonth()+1)).slice(-2)}
 function actIn(m,ym){return !(m&&m.f&&ym<m.f)&&!(m&&m.t&&ym>=m.t)}
@@ -878,25 +879,31 @@ async function runRead(files,rek){
 $("stop").onclick=function(){if(ctl)ctl.abort()};
 
 function build(arr,rek){
-  var existing=allRows(),seen={};pending=[];
+  var existing=allRows(),seen={},used=[];pending=[];
   arr.forEach(function(r){
     var n=r2(r.n);if(!(n>0)||!/^\d{4}-\d{2}-\d{2}$/.test(r.t||""))return;
     var arah=r.arah==="masuk"?"masuk":"keluar",j=J.indexOf(r.j)>=0?r.j:(arah==="masuk"?"Pendapatan":"Pengeluaran");
     var tym=r.t.slice(0,7),k=katFor(j,tym).indexOf(r.k)>=0?r.k:"",tuj=accFor(tym).indexOf(r.tujuan)>=0&&r.tujuan!==rek?r.tujuan:"";
-    var key=[r.t,n,j,norm(r.ket)].join("|"),dup=!!seen[key];seen[key]=1;
-    if(!dup)dup=existing.some(function(e){return e.t===r.t&&e.r===rek&&Math.abs(e.n)===n&&(j==="Balance"?e.j==="Balance":e.j!=="Balance"&&norm(e.b||e.d)===norm(r.ket))});
-    pending.push({sel:!dup&&(j==="Balance"?!!tuj:!!k),t:r.t,ket:String(r.ket||""),n:n,arah:arah,j:j,k:k,tuj:tuj,dup:dup,rek:rek});
+    var key=[r.t,n,j,norm(r.ket)].join("|"),dup=!!seen[key],dupU=dup;seen[key]=1;
+    if(!dup){var hit=existing.find(function(e){return used.indexOf(e)<0&&e.t===r.t&&e.r===rek&&Math.abs(e.n)===n&&(j==="Balance"?e.j==="Balance":e.j!=="Balance"&&norm(e.b||e.d)===norm(r.ket))});if(hit){used.push(hit);dup=true}}
+    pending.push({sel:!dup&&(j==="Balance"?!!tuj:!!k),t:r.t,ket:String(r.ket||""),n:n,arah:arah,j:j,k:k,tuj:tuj,dup:dup,dupU:dupU,rek:rek});
   });
   if(!pending.length){say("Tidak ada transaksi yang terbaca. Coba screenshot yang lebih jelas.");return}
   renderRev();
-  var nd=pending.filter(function(p){return !ready(p)}).length;
-  say("Terbaca "+pending.length+" transaksi."+(nd?" "+nd+" perlu kamu kelompokkan manual (warna merah).":" Semua sudah dikelompokkan, cek lalu simpan."),!nd);
+  var nd=pending.filter(function(p){return !p.dup&&!ready(p)}).length,ndup=pending.filter(function(p){return p.dup&&!p.dupU}).length,nU=pending.filter(function(p){return p.dupU}).length;
+  say("Terbaca "+pending.length+" transaksi: "+(pending.length-ndup-nU)+" baru"+(ndup?", "+ndup+" sudah terekap (tidak dicentang)":"")+(nU?", "+nU+" kembar di unggahan ini (cek sendiri)":"")+"."+(nd?" "+nd+" perlu kamu kelompokkan manual (warna merah).":(pending.length-ndup?" Semua yang baru sudah dikelompokkan, cek lalu simpan.":"")),!nd);
 }
 function ready(p){return p.j==="Balance"?(p.lawan===false||!!p.tuj):!!p.k}
 function renderRev(){
   var l=$("revList");l.innerHTML="";
   if(!pending.length){$("rev").hidden=true;$("files").value="";return}
   $("rev").hidden=false;
+  var nDup=pending.filter(function(p){return p.dup&&!p.dupU}).length,nUp=pending.filter(function(p){return p.dupU}).length;
+  if(nDup||nUp){
+    l.append(h("div",{class:"edbox",style:"margin-bottom:10px"},h("b",{text:(pending.length-nDup-nUp)+" transaksi baru, "+nDup+" sudah terekap"+(nUp?", "+nUp+" kembar di unggahan ini":"")}),
+      h("p",{class:"m",text:"Yang sudah terekap ditandai merah dan tidak dicentang, jadi tidak ikut tersimpan kecuali kamu centang. Yang kembar di unggahan ini bisa transaksi sungguhan (dua belanja sama di hari yang sama) atau screenshot yang tumpang tindih, jadi cek sendiri."}),
+      nDup?h("button",{class:"del",text:"Buang semua yang sudah terekap ("+nDup+")",onclick:function(){pending=pending.filter(function(p){return !p.dup||p.dupU});renderRev();say(nDup+" transaksi yang sudah terekap dibuang dari daftar.",true)}}):null));
+  }
   pending.forEach(function(p,idx){
     var ok=ready(p);if(!ok)p.sel=false;
     var st=p.sel?"good":"bad";
@@ -1063,7 +1070,7 @@ function serial(iso){var p=iso.split("-");return Date.UTC(+p[0],+p[1]-1,+p[2])/8
 function pDate(s){var m=String(s||"").trim().match(/^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})$/);if(!m)return"";var k=m[2].charAt(0).toUpperCase()+m[2].slice(1,3).toLowerCase();if(!MI[k])return"";return m[3]+"-"+("0"+MI[k]).slice(-2)+"-"+("0"+m[1]).slice(-2)}
 function pNum(s){s=String(s||"").trim();var neg=/^\(.*\)$/.test(s)||/^-/.test(s);s=s.replace(/[^0-9.,]/g,"");if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");var n=r2(s);return neg?-n:n}
 function mpl(res){var p=res&&res.payload;if(typeof p==="string"){try{p=JSON.parse(p)}catch(e){p=null}}return p||{}}
-var GS_CODE="// rekapyuk -> Google Sheets (Merkuri). Tempel di Extensions > Apps Script pada spreadsheet-mu.\n// Ganti KODE_RAHASIA dengan kata bebas, lalu isi kata yang sama di aplikasi (Setup > Google Sheets).\nvar KODE_RAHASIA = 'ganti-kode-ini';\nvar CONFIG = { SHEET: 'Transaksi', HEADER_ROW: 7, COL_TANGGAL: 4, COL_DESKRIPSI: 51 };\n\nfunction json_(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n\nfunction doGet(e) {\n  var p = (e && e.parameter) || {};\n  if (p.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n  if (p.rows) {\n    try { return json_(tambah_(JSON.parse(p.rows))); }\n    catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }\n  }\n  var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);\n  return json_(sh ? { ok: true, versi: 4, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' });\n}\n\nfunction doPost(e) {\n  try {\n    var body = JSON.parse(e.postData.contents);\n    if (body.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n    return json_(tambah_(body.rows || []));\n  } catch (err) {\n    return json_({ ok: false, error: String(err && err.message || err) });\n  }\n}\n\nfunction tambah_(rows) {\n  if (!rows.length) return { ok: false, error: 'Tidak ada transaksi.' };\n  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(CONFIG.SHEET);\n  if (!sh) return { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' };\n  var tz = ss.getSpreadsheetTimeZone();\n\n  var from = CONFIG.HEADER_ROW + 1;\n  var count = sh.getMaxRows() - CONFIG.HEADER_ROW;\n  var vals = sh.getRange(from, CONFIG.COL_TANGGAL, count, 5).getValues();\n  var last = 0, have = {};\n  for (var i = 0; i < vals.length; i++) {\n    var v = vals[i];\n    if (v[0] === '' || v[3] === '') continue; // baris dianggap terisi kalau Tanggal dan Jumlah ada; baris setengah jadi akan ditimpa\n    last = i + 1;\n    if (v[0] instanceof Date) {\n      var k = [Utilities.formatDate(v[0], tz, 'yyyy-MM-dd'), String(v[1]).trim(), Number(v[3]), String(v[4]).trim()].join('|');\n      have[k] = (have[k] || 0) + 1;\n    }\n  }\n\n  var send = [], skipped = 0;\n  rows.forEach(function (r) {\n    var k = [r.t, r.j, Number(r.n), r.r].join('|');\n    if (have[k]) { have[k]--; skipped++; } else send.push(r);\n  });\n\n  var start = from + last;\n  if (send.length) {\n    if (start + send.length - 1 > sh.getMaxRows()) return { ok: false, error: 'Baris di tab Transaksi tidak cukup.' };\n    var ab = [], cc = [], desc = [];\n    send.forEach(function (r) {\n      var p = r.t.split('-');\n      ab.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j]);\n      cc.push([r.k || '', Number(r.n), r.r]);\n      desc.push([r.d || '']);\n    });\n    try {\n      // Dropdown Kategori bergantung pada kolom Transaksi, jadi tulis dua tahap:\n      // 1) Tanggal + Transaksi, 2) Kategori + Jumlah + Rekening (setelah daftar kategori baris itu terbentuk).\n      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 2).setValues(ab);\n      SpreadsheetApp.flush();\n      var tulis2 = function () {\n        sh.getRange(start, CONFIG.COL_TANGGAL + 2, send.length, 3).setValues(cc);\n        SpreadsheetApp.flush();\n      };\n      try { tulis2(); } catch (e1) { Utilities.sleep(1500); tulis2(); }\n      sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);\n      SpreadsheetApp.flush();\n    } catch (err) {\n      return { ok: false, error: 'Gagal menulis mulai baris ' + start + ': ' + String(err && err.message || err) };\n    }\n  }\n  return { ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 };\n}\n";
+var GS_CODE="// rekapyuk -> Google Sheets (Merkuri). Tempel di Extensions > Apps Script pada spreadsheet-mu.\n// Ganti KODE_RAHASIA dengan kata bebas, lalu isi kata yang sama di aplikasi (Setup > Google Sheets).\nvar KODE_RAHASIA = 'ganti-kode-ini';\nvar CONFIG = { SHEET: 'Transaksi', HEADER_ROW: 7, COL_TANGGAL: 4, COL_DESKRIPSI: 51 };\n\nfunction json_(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n\nfunction doGet(e) {\n  var p = (e && e.parameter) || {};\n  if (p.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n  if (p.aksi === 'saldo') {\n    try { return json_(saldoRekening_()); }\n    catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }\n  }\n  if (p.rows) {\n    try { return json_(tambah_(JSON.parse(p.rows))); }\n    catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }\n  }\n  var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);\n  return json_(sh ? { ok: true, versi: 5, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' });\n}\n\nfunction doPost(e) {\n  try {\n    var body = JSON.parse(e.postData.contents);\n    if (body.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n    return json_(tambah_(body.rows || []));\n  } catch (err) {\n    return json_({ ok: false, error: String(err && err.message || err) });\n  }\n}\n\nfunction tambah_(rows) {\n  if (!rows.length) return { ok: false, error: 'Tidak ada transaksi.' };\n  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(CONFIG.SHEET);\n  if (!sh) return { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' };\n  var tz = ss.getSpreadsheetTimeZone();\n\n  var from = CONFIG.HEADER_ROW + 1;\n  var count = sh.getMaxRows() - CONFIG.HEADER_ROW;\n  var vals = sh.getRange(from, CONFIG.COL_TANGGAL, count, 5).getValues();\n  var last = 0, have = {};\n  for (var i = 0; i < vals.length; i++) {\n    var v = vals[i];\n    if (v[0] === '' || v[3] === '') continue; // baris dianggap terisi kalau Tanggal dan Jumlah ada; baris setengah jadi akan ditimpa\n    last = i + 1;\n    if (v[0] instanceof Date) {\n      var k = [Utilities.formatDate(v[0], tz, 'yyyy-MM-dd'), String(v[1]).trim(), Number(v[3]), String(v[4]).trim()].join('|');\n      have[k] = (have[k] || 0) + 1;\n    }\n  }\n\n  var send = [], skipped = 0;\n  rows.forEach(function (r) {\n    var k = [r.t, r.j, Number(r.n), r.r].join('|');\n    if (have[k]) { have[k]--; skipped++; } else send.push(r);\n  });\n\n  var start = from + last;\n  if (send.length) {\n    if (start + send.length - 1 > sh.getMaxRows()) return { ok: false, error: 'Baris di tab Transaksi tidak cukup.' };\n    var ab = [], cc = [], desc = [];\n    send.forEach(function (r) {\n      var p = r.t.split('-');\n      ab.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j]);\n      cc.push([r.k || '', Number(r.n), r.r]);\n      desc.push([r.d || '']);\n    });\n    try {\n      // Dropdown Kategori bergantung pada kolom Transaksi, jadi tulis dua tahap:\n      // 1) Tanggal + Transaksi, 2) Kategori + Jumlah + Rekening (setelah daftar kategori baris itu terbentuk).\n      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 2).setValues(ab);\n      SpreadsheetApp.flush();\n      var tulis2 = function () {\n        sh.getRange(start, CONFIG.COL_TANGGAL + 2, send.length, 3).setValues(cc);\n        SpreadsheetApp.flush();\n      };\n      try { tulis2(); } catch (e1) { Utilities.sleep(1500); tulis2(); }\n      sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);\n      SpreadsheetApp.flush();\n    } catch (err) {\n      return { ok: false, error: 'Gagal menulis mulai baris ' + start + ': ' + String(err && err.message || err) };\n    }\n  }\n  return { ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 };\n}\n\n// Membaca daftar \"SALDO SAAT INI\" per rekening dari tab Rekening.\nfunction saldoRekening_() {\n  var sh = SpreadsheetApp.getActive().getSheetByName('Rekening');\n  if (!sh) return { ok: false, error: 'Tab \"Rekening\" tidak ditemukan.' };\n  var vals = sh.getDataRange().getValues(), hr = -1, hc = -1, i, c;\n  for (i = 0; i < vals.length && hr < 0; i++) {\n    for (c = 0; c < vals[i].length - 1; c++) {\n      if (String(vals[i][c]).trim().toUpperCase() !== 'REKENING') continue;\n      for (var d = c + 1; d <= c + 3 && d < vals[i].length; d++) {\n        if (String(vals[i][d]).trim().toUpperCase() === 'SALDO SAAT INI') { hr = i; hc = c; break; }\n      }\n      if (hr >= 0) break;\n    }\n  }\n  if (hr < 0) return { ok: false, error: 'Tabel REKENING / SALDO SAAT INI tidak ditemukan di tab Rekening.' };\n  var out = [];\n  for (i = hr + 1; i < vals.length; i++) {\n    var nama = String(vals[i][hc] || '').trim();\n    if (!nama) break;\n    var saldo = null;\n    for (c = hc + 1; c <= hc + 4 && c < vals[i].length; c++) {\n      if (typeof vals[i][c] === 'number') { saldo = vals[i][c]; break; }\n    }\n    out.push({ n: nama, saldo: saldo === null ? 0 : saldo });\n  }\n  return { ok: true, rekening: out };\n}\n";
 async function gsCall(url,method,body){
   var cap=window.Capacitor,H=cap&&cap.isNativePlatform&&cap.isNativePlatform()&&cap.Plugins&&cap.Plugins.CapacitorHttp;
   if(H){var r=await H.request({url:url,method:method,headers:method==="POST"?{"Content-Type":"text/plain;charset=utf-8"}:{},data:method==="POST"?body:undefined,responseType:"text",connectTimeout:30000,readTimeout:60000});return{status:r.status,text:typeof r.data==="string"?r.data:JSON.stringify(r.data)}}
@@ -1163,6 +1170,50 @@ function monthly(name){
   var m={};allRows().forEach(function(r){if(r.r!==name)return;var k=r.t.slice(0,7),e=eff(r);m[k]=m[k]||{i:0,o:0};if(e>=0)m[k].i+=e;else m[k].o+=-e});
   return m;
 }
+function appBalances(){
+  var rows=allRows();
+  return cfg.acc.filter(function(a){return actIn(a,curYm())||rows.some(function(r){return r.r===a.n})}).map(function(a){
+    return{n:a.n,v:r2((Number(a.o)||0)+rows.filter(function(r){return r.r===a.n}).reduce(function(s,r){return s+eff(r)},0))};
+  });
+}
+function showModal(title,build){
+  var old=$("ovl");if(old)old.remove();
+  var ov=h("div",{id:"ovl",role:"dialog","aria-modal":"true","aria-label":title,style:"position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:max(16px,env(safe-area-inset-top)) 14px 24px"});
+  var box=h("div",{class:"card",style:"max-width:520px;width:100%;margin:8px auto"});
+  box.append(h("b",{text:title}));build(box);
+  box.append(h("button",{class:"w",text:"Tutup",onclick:function(){ov.remove()}}));
+  ov.onclick=function(e){if(e.target===ov)ov.remove()};ov.append(box);document.body.append(ov);
+}
+$("balCheck").onclick=async function(){
+  var btn=$("balCheck");
+  if(!cfg.gsurl)return showModal("Cek saldo",function(b){b.append(h("p",{class:"m",text:"Pasang dulu skrip Google Sheets di Setup, submenu Google Sheets. Setelah tersambung, tombol ini bisa membandingkan saldo."}))});
+  btn.disabled=true;btn.textContent="Membandingkan...";
+  try{
+    var d=gsParse(await gsCall(cfg.gsurl+(cfg.gsurl.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(cfg.gstoken||"")+"&aksi=saldo","GET"));
+    if(!d.ok)throw new Error(d.error||"Skrip menolak permintaan.");
+    if(!Array.isArray(d.rekening))throw new Error("Skrip di Google masih versi lama. Tempel kode terbaru dari Setup, submenu Google Sheets, lalu Terapkan, Kelola deployment, Versi baru.");
+    var app=appBalances(),nk=function(x){return String(x||"").trim().toLowerCase()},sh={},res=[];
+    d.rekening.forEach(function(x){sh[nk(x.n)]={n:String(x.n).trim(),v:r2(x.saldo)}});
+    app.forEach(function(a){var x=sh[nk(a.n)];if(x){res.push({n:a.n,a:a.v,s:x.v,st:Math.abs(a.v-x.v)<0.005?"sama":"beda"});x.used=1}else if(Math.abs(a.v)>=0.005)res.push({n:a.n,a:a.v,s:null,st:"hanya-app"})});
+    Object.keys(sh).forEach(function(k){if(!sh[k].used&&Math.abs(sh[k].v)>=0.005)res.push({n:sh[k].n,a:null,s:sh[k].v,st:"hanya-sheet"})});
+    var bad=res.filter(function(x){return x.st!=="sama"}),good=res.filter(function(x){return x.st==="sama"}),unsent=allRows().filter(function(r){return !r.cp}).length;
+    var money=function(v){return v==null?"-":(v<0?"-":"")+"Rp "+rp(v)};
+    showModal(bad.length?"Ada saldo yang berbeda":"Semua saldo sama",function(b){
+      b.append(h("p",{style:"font-weight:700;color:var(--"+(bad.length?"neg":"pos")+")",text:bad.length?bad.length+" dari "+res.length+" rekening berbeda:":"Saldo "+good.length+" rekening di aplikasi dan Google Sheets sama."}));
+      bad.forEach(function(x){
+        var lbl=x.st==="beda"?"Selisih "+money(r2(x.a-x.s)):x.st==="hanya-app"?"Tidak ada di tab Rekening Sheets":"Tidak ada di aplikasi";
+        b.append(h("div",{class:"it rv bad"},h("div",{style:"font-weight:700",text:x.n}),h("div",{class:"m",text:"Aplikasi: "+money(x.a)}),h("div",{class:"m",text:"Google Sheets: "+money(x.s)}),h("div",{class:"m",style:"color:var(--neg);font-weight:700",text:lbl})));
+      });
+      if(bad.length&&unsent)b.append(h("p",{class:"m",text:"Catatan: ada "+unsent+" transaksi di aplikasi yang belum ditandai terkirim ke Sheets. Kirim dulu dari tab Transaksi, lalu cek lagi, karena itu penyebab selisih yang paling umum. Penyebab lain: saldo awal di Setup berbeda dengan Sheets."}));
+      if(bad.length&&!unsent)b.append(h("p",{class:"m",text:"Semua transaksi sudah terkirim, jadi selisih kemungkinan dari saldo awal yang berbeda (cek Setup) atau transaksi yang diubah langsung di Sheets."}));
+      if(good.length&&bad.length){var dt=h("details",{});dt.append(h("summary",{text:"Rekening yang sama ("+good.length+")"}));good.forEach(function(x){dt.append(h("div",{class:"m",text:x.n+": "+money(x.a)}))});b.append(dt)}
+      else if(good.length)good.forEach(function(x){b.append(h("div",{class:"m",text:x.n+": "+money(x.a)}))});
+    });
+  }catch(e){
+    showModal("Cek saldo gagal",function(b){b.append(h("p",{class:"m",style:"color:var(--neg)",text:String(e&&e.message||e)}))});
+  }
+  btn.disabled=false;btn.textContent="Cek saldo dengan Google Sheets";
+};
 function renderBal(){
   var l=$("balList");l.innerHTML="";var rows=allRows();
   var total=0,shownAcc=cfg.acc.filter(function(a){return actIn(a,curYm())||rows.some(function(r){return r.r===a.n})});
@@ -1314,7 +1365,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v13 (versi ringkas)";
+var APP_VER="v14 (cek saldo, dobel)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
@@ -1344,7 +1395,7 @@ function renderSet(){
       cfg.gsurl=u;cfg.gstoken=t;persist();
       if(!u){renderSet();return sm("Pengaturan skrip dihapus.",true)}
       try{var d=gsParse(await gsCall(u+(u.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(t),"GET"));
-        renderSet();sm(d&&d.ok?"Tersambung ke spreadsheet: "+d.sheet+(d.versi>=4?"":". PERHATIAN: skrip masih versi lama, perbarui dengan kode terbaru dan deploy versi baru"):"Tersimpan, tapi: "+((d&&d.error)||"skrip tidak merespons"),!!(d&&d.ok))
+        renderSet();sm(d&&d.ok?"Tersambung ke spreadsheet: "+d.sheet+(d.versi>=5?"":". PERHATIAN: skrip masih versi lama, perbarui dengan kode terbaru dan deploy versi baru"):"Tersimpan, tapi: "+((d&&d.error)||"skrip tidak merespons"),!!(d&&d.ok))
       }catch(e){renderSet();sm("Tersimpan, tapi belum bisa tersambung. Cek internet, atau apakah akses Web app diset Siapa saja.",false)}}}));
   gb.append(sd);renderSub();
   var cur=curYm();JS.forEach(function(j){box.append(block(j,j,KAT[j],katOps(j),open[j],function(n){return !actIn(cfg.km[j+"|"+n],cur)}))});

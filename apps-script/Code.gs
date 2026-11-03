@@ -10,12 +10,16 @@ function json_(o) {
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });
+  if (p.aksi === 'saldo') {
+    try { return json_(saldoRekening_()); }
+    catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
+  }
   if (p.rows) {
     try { return json_(tambah_(JSON.parse(p.rows))); }
     catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
   }
   var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);
-  return json_(sh ? { ok: true, versi: 4, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
+  return json_(sh ? { ok: true, versi: 5, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
 }
 
 function doPost(e) {
@@ -81,4 +85,32 @@ function tambah_(rows) {
     }
   }
   return { ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 };
+}
+
+// Membaca daftar "SALDO SAAT INI" per rekening dari tab Rekening.
+function saldoRekening_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName('Rekening');
+  if (!sh) return { ok: false, error: 'Tab "Rekening" tidak ditemukan.' };
+  var vals = sh.getDataRange().getValues(), hr = -1, hc = -1, i, c;
+  for (i = 0; i < vals.length && hr < 0; i++) {
+    for (c = 0; c < vals[i].length - 1; c++) {
+      if (String(vals[i][c]).trim().toUpperCase() !== 'REKENING') continue;
+      for (var d = c + 1; d <= c + 3 && d < vals[i].length; d++) {
+        if (String(vals[i][d]).trim().toUpperCase() === 'SALDO SAAT INI') { hr = i; hc = c; break; }
+      }
+      if (hr >= 0) break;
+    }
+  }
+  if (hr < 0) return { ok: false, error: 'Tabel REKENING / SALDO SAAT INI tidak ditemukan di tab Rekening.' };
+  var out = [];
+  for (i = hr + 1; i < vals.length; i++) {
+    var nama = String(vals[i][hc] || '').trim();
+    if (!nama) break;
+    var saldo = null;
+    for (c = hc + 1; c <= hc + 4 && c < vals[i].length; c++) {
+      if (typeof vals[i][c] === 'number') { saldo = vals[i][c]; break; }
+    }
+    out.push({ n: nama, saldo: saldo === null ? 0 : saldo });
+  }
+  return { ok: true, rekening: out };
 }
