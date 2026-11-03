@@ -3,7 +3,7 @@ name: Bangun APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [rilis-v17]
     paths:
       - "index.html"
       - "apk/**"
@@ -71,8 +71,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete apk-terbaru --cleanup-tag --yes || true
-          gh release create apk-terbaru rekapyuk.apk \
+          gh release delete apk-v17 --cleanup-tag --yes || true
+          gh release create apk-v17 rekapyuk.apk \
             --target "${{ github.sha }}" \
             --title "rekapyuk APK (build #${{ github.run_number }})" \
             --notes "APK rekapyuk build #${{ github.run_number }}. Unduh rekapyuk.apk di bawah, lalu pasang di HP Android. Aplikasi ini tidak berisi data keuanganmu."
