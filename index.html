@@ -1165,6 +1165,10 @@ function txEditor(r){
   return box;
 }
 var balOpen={};
+function cmpLine(name){
+  var c=cfg.cmp&&cfg.cmp[name];if(!c)return null;
+  return h("div",{class:"m",style:"color:var(--neg);font-weight:700",text:"Dicek "+fd(c.t)+": "+(c.d==null?"tidak ada di Sheets":"berbeda "+(c.d<0?"-":"+")+"Rp "+rp(c.d))});
+}
 function lastChecked(name){return (cfg.checked&&cfg.checked[name])||""}
 function monthly(name){
   var m={};allRows().forEach(function(r){if(r.r!==name)return;var k=r.t.slice(0,7),e=eff(r);m[k]=m[k]||{i:0,o:0};if(e>=0)m[k].i+=e;else m[k].o+=-e});
@@ -1198,8 +1202,10 @@ $("balCheck").onclick=async function(){
     Object.keys(sh).forEach(function(k){if(!sh[k].used&&Math.abs(sh[k].v)>=0.005)res.push({n:sh[k].n,a:null,s:sh[k].v,st:"hanya-sheet"})});
     var bad=res.filter(function(x){return x.st!=="sama"}),goodNames=res.filter(function(x){return x.st==="sama"}).map(function(x){return x.n}),good=res.filter(function(x){return x.st==="sama"}),unsent=allRows().filter(function(r){return !r.cp}).length;
     var tgl=todayIso(),catat="";
+    cfg.cmp=cfg.cmp||{};res.forEach(function(x){if(x.st==="beda")cfg.cmp[x.n]={t:tgl,d:r2(x.a-x.s)};else if(x.st==="hanya-app")cfg.cmp[x.n]={t:tgl,d:null}});
+    persist();renderBal();
     if(goodNames.length){
-      cfg.checked=cfg.checked||{};goodNames.forEach(function(n){cfg.checked[n]=tgl});persist();renderBal();
+      cfg.checked=cfg.checked||{};goodNames.forEach(function(n){cfg.checked[n]=tgl;if(cfg.cmp)delete cfg.cmp[n]});persist();renderBal();
       try{
         var pr=gsParse(await gsCall(cfg.gsurl+(cfg.gsurl.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(cfg.gstoken||"")+"&aksi=periksa&tgl="+tgl+"&names="+encodeURIComponent(JSON.stringify(goodNames)),"GET"));
         if(!pr.ok)catat="Tanggal di aplikasi sudah diperbarui, tapi di Sheets gagal: "+(pr.error||"skrip menolak")+".";
@@ -1232,7 +1238,7 @@ function renderBal(){
     var sum=rows.filter(function(r){return r.r===a.n}).reduce(function(s,r){return s+eff(r)},0),now=(Number(a.o)||0)+sum;total+=now;
     var d=h("details",{class:"it"});if(balOpen[a.n])d.open=true;
     d.ontoggle=function(){balOpen[a.n]=d.open};
-    d.append(h("summary",{class:"bsum"},h("div",{class:"top"},h("div",{},h("div",{text:a.n}),h("div",{class:"m",text:"Terakhir diperiksa: "+(lastChecked(a.n)?fd(lastChecked(a.n)):"belum pernah dicocokkan dengan Sheets")}),h("div",{class:"m",text:"Ketuk untuk lihat deposit dan debit per bulan"})),h("div",{class:"amt "+(now<0?"out":""),text:"Rp "+(now<0?"-":"")+rp(now)}))));
+    d.append(h("summary",{class:"bsum"},h("div",{class:"top"},h("div",{},h("div",{text:a.n}),h("div",{class:"m",text:"Terakhir cocok dengan Sheets: "+(lastChecked(a.n)?fd(lastChecked(a.n)):"belum pernah cocok")}),cmpLine(a.n),h("div",{class:"m",text:"Ketuk untuk lihat deposit dan debit per bulan"})),h("div",{class:"amt "+(now<0?"out":""),text:"Rp "+(now<0?"-":"")+rp(now)}))));
     var m=monthly(a.n),ks=Object.keys(m).sort().reverse();
     if(!ks.length){d.append(h("p",{class:"m",text:"Belum ada transaksi di rekening ini."}))}
     else{
@@ -1376,7 +1382,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v15 (tanggal diperiksa)";
+var APP_VER="v16 (status cek per rekening)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
