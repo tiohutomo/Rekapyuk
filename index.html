@@ -269,24 +269,38 @@ function cleanDesc(s){
 /* ---- Mode baris (teks PDF atau hasil OCR) ---- */
 function parseLines(text,ctx){
   var lines=String(text).split(/\r?\n/).map(function(l){return l.trim()}).filter(Boolean);
-  var out=[],curDate=null,cur=null,yr=ctx.year||defYear();
+  var out=[],curDate=null,cur=null,yr=ctx.year||defYear(),undated=[];
   var ym=String(text).match(/\b(20\d{2})\b/);if(ym&&!ctx.year)yr=+ym[1];
+  /* Deteksi tata letak: tanggal DI BAWAH tiap transaksi (bukan judul tanggal di atasnya) */
+  var nDate=0,nRow=0,firstRow=null;
+  lines.forEach(function(raw){
+    if(/^---\s*halaman/i.test(raw)||/^###\s/.test(raw))return;
+    var d=findDate(raw,{noYearAtStart:true,year:yr}),am=findAmounts(d?d.rest:raw);
+    if(d&&!am.length){nDate++;if(firstRow===null)firstRow=false}
+    else if(am.length){nRow++;if(firstRow===null)firstRow=!d}
+  });
+  var dateAfter=firstRow===true&&nDate>=Math.max(1,nRow-1);
   function close(){if(cur){out.push(cur);cur=null}}
   lines.forEach(function(raw){
     if(/^---\s*halaman/i.test(raw)||/^###\s/.test(raw))return;
     var d=findDate(raw,{noYearAtStart:true,year:yr});
     var rest=d?d.rest:raw;
     var am=findAmounts(rest);
-    if(d&&!am.length){close();curDate=d.iso;return}
+    if(d&&!am.length){
+      close();curDate=d.iso;
+      if(dateAfter){undated.forEach(function(u){u.t=d.iso});undated=[]}
+      return}
     if(am.length){
       close();
       var pick=am[0];
       if(am.length>=2&&am[0].v===0)pick=am[1];
-      var t=d?d.iso:curDate;
-      if(!t)return;
+      var t=d?d.iso:(dateAfter?null:curDate);
+      if(!t&&!dateAfter)return;
       var line=rest.slice(0,pick.idx)+" "+rest.slice(pick.idx+pick.len);
       cur={t:t,n:pick.v,arah:direction(rest,pick.sign),ket:cleanDesc(line),raw:rest,extra:0};
+      if(am.length>=2&&am[am.length-1]!==pick)cur.bal=am[am.length-1].v;
       if(!(cur.n>0))cur=null;
+      else if(!t)undated.push(cur);
       return;
     }
     if(cur&&cur.extra<3&&!/^(saldo|total|halaman|page|periode|mutasi rekening)/i.test(raw)){
@@ -295,6 +309,17 @@ function parseLines(text,ctx){
     }
   });
   close();
+  out=out.filter(function(x){return x.t});
+  /* Arah masuk/keluar dari selisih saldo antar baris yang berdekatan (kolom saldo di sebelah nominal) */
+  out.forEach(function(x,i){
+    if(x.bal==null)return;
+    [i+1,i-1].some(function(j){
+      var y=out[j];if(!y||y.bal==null)return false;
+      var d=r2(x.bal-y.bal);
+      if(Math.abs(Math.abs(d)-x.n)<0.005){x.arah=d>0?"masuk":"keluar";return true}
+      return false;
+    });
+  });
   return out;
 }
 
@@ -1391,7 +1416,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v19 (sudah terekap = kuning)";
+var APP_VER="v20 (tanggal di bawah, arah dari saldo)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
