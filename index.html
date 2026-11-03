@@ -140,7 +140,6 @@ summary{font-weight:700;cursor:pointer;min-height:32px}
 
 <section id="v-tx" hidden>
   <div class="card">
-    <div id="btnsTx" class="bt"></div>
     <div class="fg">
       <div><label for="fY">Tahun</label><select id="fY"></select></div>
       <div><label for="fM">Bulan</label><select id="fM"></select></div>
@@ -192,32 +191,6 @@ summary{font-weight:700;cursor:pointer;min-height:32px}
   <div id="sub-bk" hidden><div class="card" id="bkBox"></div></div>
 </section>
 
-<section id="v-dev" hidden>
-  <div class="card">
-    <b>Mode Developer</b>
-    <p class="m">Buat tombol sendiri. Tiap tombol bisa menjalankan aksi di aplikasi. Di versi lokal, perintah untuk Claude diganti ringkasan otomatis (tanpa AI). Tombolnya muncul di tab Transaksi dan di bawah ini.</p>
-    <label for="dvLabel">Nama tombol</label>
-    <input id="dvLabel" maxlength="30">
-    <label for="dvAct">Aksi di aplikasi</label>
-    <select id="dvAct"></select>
-    <label for="dvPrompt">Perintah (hanya dipakai di versi Claude, boleh kosong)</label>
-    <textarea id="dvPrompt" rows="4"></textarea>
-    <p class="m">Di versi lokal, tombol dengan perintah menampilkan ringkasan otomatis bulan terakhir.</p>
-    <button class="w" id="dvSave">Simpan tombol</button>
-    <button class="w sec" id="dvEx">Tambah 3 contoh tombol</button>
-    <p id="dvMsg" class="m" role="status"></p>
-  </div>
-  <div class="card">
-    <b>Tombol saya</b>
-    <div id="btnsDev" class="bt"></div>
-    <div id="dvList"></div>
-  </div>
-</section>
-
-<div class="card" id="out" hidden>
-  <b id="outT"></b>
-  <p id="outB" role="status"></p>
-  <button class="w sec" id="outX">Tutup</button>
 </div>
 </main>
 
@@ -604,17 +577,6 @@ window.claude={use:async function(name){
   throw{code:"capability_disabled"};
 }};
 
-/* ---- Ringkasan tanpa AI untuk tombol Mode Developer ---- */
-window.localSummary=function(){
-  var rows=allRows();if(!rows.length)return"Belum ada transaksi tersimpan.";
-  var last=rows.map(function(r){return r.t.slice(0,7)}).sort().pop(),inn=0,out=0,cat={};
-  rows.filter(function(r){return r.t.slice(0,7)===last&&r.j!=="Balance"}).forEach(function(r){
-    if(r.j==="Pendapatan")inn+=r.n;else{out+=r.n;var k=r.k||r.j;cat[k]=(cat[k]||0)+r.n}});
-  var top=Object.keys(cat).sort(function(a,b){return cat[b]-cat[a]}).slice(0,5);
-  var f=function(n){return"Rp "+(Math.round(n*100)/100).toLocaleString("id-ID",{minimumFractionDigits:0,maximumFractionDigits:2})};
-  return"Ringkasan "+last+" (dihitung otomatis, tanpa AI)\nPendapatan: "+f(inn)+"\nPengeluaran: "+f(out)+"\nSelisih: "+(inn-out<0?"-":"")+f(Math.abs(inn-out))+"\n\nPengeluaran terbesar:\n"+top.map(function(k,i){return(i+1)+". "+k+": "+f(cat[k])}).join("\n")+"\n\nPerintah bebas untuk Claude tidak tersedia di versi lokal.";
-};
-
 /* ---- Backup, Google Drive (lewat Bagikan), backup otomatis, restore ---- */
 var autoT=null;
 function autoOn(){try{return localStorage.getItem("rk-auto")!=="off"}catch(e){return true}}
@@ -748,14 +710,13 @@ async function init(){
     if(db){var snap=await db.collection(base).get();snap.docs.forEach(function(d){var x=d.data();if(x)x=JSON.parse(JSON.stringify(x));if(d.id==="config"&&x){cfg=x}else if(d.id.indexOf("m-")===0&&x){months[d.id.slice(2)]=x.rows||[]}else if(d.id.indexOf("b-")===0&&x){budgets[d.id.slice(2)]=x}})}
   }catch(e){db=null}
   try{sample=await claude.use("sample")}catch(e){sample=null}
-  try{mcpNs=await claude.use("mcp")}catch(e){mcpNs=null}
   if(!db)say("Penyimpanan tidak tersedia: data hanya tersimpan selama halaman terbuka.");
   if(!sample){$("read").disabled=true;say("Fitur baca gambar tidak tersedia di tampilan ini.")}
   cfg.km=cfg.km||{};
   cfg.acc=Array.isArray(cfg.acc)&&cfg.acc.length?cfg.acc:REK0.map(function(n){return{n:n,o:0}});
   fill($("rek"),accFor(curYm()));
   var md="auto";try{md=localStorage.getItem("rk-mode")||"auto"}catch(e){}
-  cfg.btns=cfg.btns||[];cfg.rules=cfg.rules||{};
+  cfg.rules=cfg.rules||{};
   if(!cfg.kat)cfg.kat=JSON.parse(JSON.stringify(KAT));
   J.forEach(function(j){cfg.kat[j]=cfg.kat[j]||[]});cfg.kat.Balance=[];
   var mig=0,cfgCh=false;
@@ -770,7 +731,7 @@ async function init(){
   show("up");
 }
 function fill(el,a){el.innerHTML="";a.forEach(function(v){el.append(h("option",{value:v,text:v}))})}
-function show(v){view=v;["up","tx","rev","bal","dev","set"].forEach(function(k){$("v-"+k).hidden=k!==v});Array.from($("nav").children).forEach(function(b){b.setAttribute("aria-current",b.dataset.v===v)});if(v==="tx")renderTx();if(v==="bal")renderBal();if(v==="dev")renderDev();if(v==="set")renderSet();if(v==="rev")renderRv();renderBtns($("btnsTx"))}
+function show(v){view=v;["up","tx","rev","bal","set"].forEach(function(k){$("v-"+k).hidden=k!==v});Array.from($("nav").children).forEach(function(b){b.setAttribute("aria-current",b.dataset.v===v)});if(v==="tx")renderTx();if(v==="bal")renderBal();if(v==="set")renderSet();if(v==="rev")renderRv()}
 
 async function persist(ym){if(!db)return;try{if(ym)await db.doc(base+"/m-"+ym).set({rows:months[ym]});await db.doc(base+"/config").set(cfg)}catch(e){say("Gagal menyimpan ke penyimpanan.")}}
 
@@ -1096,32 +1057,12 @@ function renderTx(){
     l.append(row);
   });
 }
-var txEdit=null,gsOnlyNew=true,mcpNs=null,GSN="Google Sheets";
+var txEdit=null,gsOnlyNew=true;
 var MI={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Mei:5,Jun:6,Jul:7,Aug:8,Agu:8,Agt:8,Sep:9,Oct:10,Okt:10,Nov:11,Dec:12,Des:12};
 function serial(iso){var p=iso.split("-");return Date.UTC(+p[0],+p[1]-1,+p[2])/864e5+25569}
 function pDate(s){var m=String(s||"").trim().match(/^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})$/);if(!m)return"";var k=m[2].charAt(0).toUpperCase()+m[2].slice(1,3).toLowerCase();if(!MI[k])return"";return m[3]+"-"+("0"+MI[k]).slice(-2)+"-"+("0"+m[1]).slice(-2)}
 function pNum(s){s=String(s||"").trim();var neg=/^\(.*\)$/.test(s)||/^-/.test(s);s=s.replace(/[^0-9.,]/g,"");if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");var n=r2(s);return neg?-n:n}
 function mpl(res){var p=res&&res.payload;if(typeof p==="string"){try{p=JSON.parse(p)}catch(e){p=null}}return p||{}}
-var MERR={needs_reauth:"Koneksi Google Sheets kedaluwarsa. Sambungkan ulang di claude.ai Settings \u2192 Connectors.",server_not_connected:"Google Sheets belum tersambung di akun Claude ini. Tambahkan di claude.ai Settings \u2192 Connectors.",selection_required:"Pilih akun Google Sheets yang dipakai saat Claude menanyakannya, lalu coba lagi.",not_in_manifest:"Akses Google Sheets untuk aplikasi ini belum diizinkan.",approval_required:"Pengiriman butuh persetujuanmu. Tekan Kirim lagi lalu pilih Izinkan.",tool_error:"Google Sheets menolak permintaan. Pastikan link di Setup benar dan akun Google-mu punya akses edit.",server_unavailable:"Google Sheets sedang tidak bisa dihubungi. Coba lagi sebentar lagi.",not_granted:"Koneksi Google Sheets tidak tersedia di tampilan ini.",capability_disabled:"Koneksi Google Sheets tidak tersedia di tampilan ini."};
-async function sendGs(src,out){
-  var id=cfg.gs;if(!id)return sm("Isi dulu link Google Sheets di tab Setup.",false);
-  out.innerHTML="";var st=h("p",{class:"m",style:"font-weight:700",text:"Membaca spreadsheet..."});out.append(st);
-  try{
-    var vals=mpl(await mcpNs.callTool(GSN,"get_values",{spreadsheetId:id,range:"Transaksi!D8:H"})).values||[],start=8+vals.length,have={};
-    vals.forEach(function(v){var d=pDate(v[0]);if(!d)return;var k=[d,String(v[1]||"").trim(),pNum(v[3]),String(v[4]||"").trim()].join("|");have[k]=(have[k]||0)+1});
-    var send=[],skip=[];src.forEach(function(r){var k=[r.t,r.j,r.n,r.r].join("|");if(have[k]){have[k]--;skip.push(r)}else send.push(r)});
-    var tch={};
-    if(send.length){
-      var end=start+send.length-1;st.textContent="Mengirim "+send.length+" transaksi ke baris "+start+" sampai "+end+"...";
-      await mcpNs.callTool(GSN,"update_values",{spreadsheetId:id,range:"Transaksi!D"+start+":H"+end,values:send.map(function(r){return[serial(r.t),r.j,r.k||"",r.n,r.r]})});
-      send.forEach(function(r){r.cp=1;tch[r.t.slice(0,7)]=1});
-      var dOk=true;try{await mcpNs.callTool(GSN,"update_values",{spreadsheetId:id,range:"Transaksi!AY"+start+":AY"+end,values:send.map(function(r){return[r.d||""]})})}catch(e){dOk=false}
-    }
-    skip.forEach(function(r){r.cp=1;tch[r.t.slice(0,7)]=1});
-    saveMonths(tch);renderTx();
-    sm(send.length?send.length+" transaksi terkirim ke baris "+start+"\u2013"+(start+send.length-1)+"."+(skip.length?" "+skip.length+" dilewati karena sudah ada.":"")+(dOk?"":" Deskripsi gagal terkirim, isi kolom DESKRIPSI manual."):"Semua "+skip.length+" transaksi sudah ada di spreadsheet. Ditandai sudah terkirim.",dOk!==false);
-  }catch(e){st.textContent=MERR[e&&e.code]||"Gagal mengirim ke Google Sheets. Coba lagi.";st.style.color="var(--neg)"}
-}
 var GS_CODE="// rekapyuk -> Google Sheets (Merkuri). Tempel di Extensions > Apps Script pada spreadsheet-mu.\n// Ganti KODE_RAHASIA dengan kata bebas, lalu isi kata yang sama di aplikasi (Setup > Google Sheets).\nvar KODE_RAHASIA = 'ganti-kode-ini';\nvar CONFIG = { SHEET: 'Transaksi', HEADER_ROW: 7, COL_TANGGAL: 4, COL_DESKRIPSI: 51 };\n\nfunction json_(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n\nfunction doGet(e) {\n  var p = (e && e.parameter) || {};\n  if (p.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n  if (p.rows) {\n    try { return json_(tambah_(JSON.parse(p.rows))); }\n    catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }\n  }\n  var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);\n  return json_(sh ? { ok: true, versi: 4, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' });\n}\n\nfunction doPost(e) {\n  try {\n    var body = JSON.parse(e.postData.contents);\n    if (body.token !== KODE_RAHASIA) return json_({ ok: false, error: 'Kode rahasia salah.' });\n    return json_(tambah_(body.rows || []));\n  } catch (err) {\n    return json_({ ok: false, error: String(err && err.message || err) });\n  }\n}\n\nfunction tambah_(rows) {\n  if (!rows.length) return { ok: false, error: 'Tidak ada transaksi.' };\n  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(CONFIG.SHEET);\n  if (!sh) return { ok: false, error: 'Tab \"' + CONFIG.SHEET + '\" tidak ditemukan.' };\n  var tz = ss.getSpreadsheetTimeZone();\n\n  var from = CONFIG.HEADER_ROW + 1;\n  var count = sh.getMaxRows() - CONFIG.HEADER_ROW;\n  var vals = sh.getRange(from, CONFIG.COL_TANGGAL, count, 5).getValues();\n  var last = 0, have = {};\n  for (var i = 0; i < vals.length; i++) {\n    var v = vals[i];\n    if (v[0] === '' || v[3] === '') continue; // baris dianggap terisi kalau Tanggal dan Jumlah ada; baris setengah jadi akan ditimpa\n    last = i + 1;\n    if (v[0] instanceof Date) {\n      var k = [Utilities.formatDate(v[0], tz, 'yyyy-MM-dd'), String(v[1]).trim(), Number(v[3]), String(v[4]).trim()].join('|');\n      have[k] = (have[k] || 0) + 1;\n    }\n  }\n\n  var send = [], skipped = 0;\n  rows.forEach(function (r) {\n    var k = [r.t, r.j, Number(r.n), r.r].join('|');\n    if (have[k]) { have[k]--; skipped++; } else send.push(r);\n  });\n\n  var start = from + last;\n  if (send.length) {\n    if (start + send.length - 1 > sh.getMaxRows()) return { ok: false, error: 'Baris di tab Transaksi tidak cukup.' };\n    var ab = [], cc = [], desc = [];\n    send.forEach(function (r) {\n      var p = r.t.split('-');\n      ab.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j]);\n      cc.push([r.k || '', Number(r.n), r.r]);\n      desc.push([r.d || '']);\n    });\n    try {\n      // Dropdown Kategori bergantung pada kolom Transaksi, jadi tulis dua tahap:\n      // 1) Tanggal + Transaksi, 2) Kategori + Jumlah + Rekening (setelah daftar kategori baris itu terbentuk).\n      sh.getRange(start, CONFIG.COL_TANGGAL, send.length, 2).setValues(ab);\n      SpreadsheetApp.flush();\n      var tulis2 = function () {\n        sh.getRange(start, CONFIG.COL_TANGGAL + 2, send.length, 3).setValues(cc);\n        SpreadsheetApp.flush();\n      };\n      try { tulis2(); } catch (e1) { Utilities.sleep(1500); tulis2(); }\n      sh.getRange(start, CONFIG.COL_DESKRIPSI, send.length, 1).setValues(desc);\n      SpreadsheetApp.flush();\n    } catch (err) {\n      return { ok: false, error: 'Gagal menulis mulai baris ' + start + ': ' + String(err && err.message || err) };\n    }\n  }\n  return { ok: true, sent: send.length, skipped: skipped, firstRow: send.length ? start : 0, lastRow: send.length ? start + send.length - 1 : 0 };\n}\n";
 async function gsCall(url,method,body){
   var cap=window.Capacitor,H=cap&&cap.isNativePlatform&&cap.isNativePlatform()&&cap.Plugins&&cap.Plugins.CapacitorHttp;
@@ -1160,19 +1101,19 @@ async function sendGsScript(src,out){
 }
 function renderGs(rows){
   var box=$("gsBox");box.innerHTML="";if(!rows.length)return;
-  if(!mcpNs&&!cfg.gsurl){box.append(h("p",{class:"m",style:"margin:12px 0",text:"Untuk kirim langsung ke Google Sheets, pasang skrip dulu: Setup \u2192 Google Sheets \u2192 Kirim otomatis lewat skrip. Atau pakai tombol Unduh rekap .xlsx lalu tempel ke tab Transaksi."}));return}
+  if(!cfg.gsurl){box.append(h("p",{class:"m",style:"margin:12px 0",text:"Untuk kirim langsung ke Google Sheets, pasang skrip dulu: Setup \u2192 Google Sheets \u2192 Kirim otomatis lewat skrip. Atau pakai tombol Unduh rekap .xlsx lalu tempel ke tab Transaksi."}));return}
   var src=rows.filter(function(r){return !gsOnlyNew||!r.cp}).slice().sort(function(a,b){return a.t<b.t?-1:a.t>b.t?1:0});
   var cb=h("input",{type:"checkbox","aria-label":"Hanya yang belum ada di Sheets"});cb.checked=gsOnlyNew;cb.onchange=function(){gsOnlyNew=cb.checked;renderTx()};
   var o2=h("div",{}),kb=h("button",{class:"w",style:"margin-top:8px",text:"Kirim "+src.length+" transaksi ke Google Sheets",onclick:function(){
     if(!src.length)return sm("Tidak ada transaksi untuk dikirim.",false);
-    if(!mcpNs?!cfg.gsurl:!cfg.gs)return sm(mcpNs?"Isi dulu link Google Sheets di tab Setup.":"Isi dulu alamat skrip di tab Setup.",false);
+    if(!cfg.gsurl)return sm("Isi dulu alamat skrip di tab Setup.",false);
     o2.innerHTML="";o2.append(h("p",{class:"m",text:"Kirim "+src.length+" transaksi ke tab Transaksi di spreadsheet-mu? Yang sudah ada di sheet akan dilewati. Kolom rumus tidak disentuh."}),
-      h("div",{class:"row2"},h("button",{text:"Ya, kirim",onclick:function(){kb.disabled=true;(mcpNs?sendGs:sendGsScript)(src,o2)}}),h("button",{class:"sec",text:"Batal",onclick:function(){o2.innerHTML=""}})));
+      h("div",{class:"row2"},h("button",{text:"Ya, kirim",onclick:function(){kb.disabled=true;sendGsScript(src,o2)}}),h("button",{class:"sec",text:"Batal",onclick:function(){o2.innerHTML=""}})));
   }});
   var rs=h("button",{class:"del",text:"Tandai semua hasil filter sebagai belum ada di Sheets",onclick:function(){
     var tch={};rows.forEach(function(r){if(r.cp){delete r.cp;tch[r.t.slice(0,7)]=1}});renderTx();sm("Tanda dihapus.",true);saveMonths(tch)}});
   box.append(h("div",{class:"edbox",style:"margin:12px 0"},h("b",{text:"Kirim ke Google Sheets"}),
-    h("p",{class:"m",text:(cfg.gs||cfg.gsurl)?"Mengikuti filter di atas. Transaksi ditambahkan di bawah baris terakhir tab Transaksi.":"Isi dulu link spreadsheet di tab Setup \u2192 Google Sheets."}),
+    h("p",{class:"m",text:cfg.gsurl?"Mengikuti filter di atas. Transaksi ditambahkan di bawah baris terakhir tab Transaksi.":"Isi dulu link spreadsheet di tab Setup \u2192 Google Sheets."}),
     h("label",{style:"display:flex;gap:8px;align-items:center;color:var(--tx);font-size:14px"},cb,h("span",{text:"Hanya yang belum ada di Sheets"})),
     kb,rs,o2));
 }
@@ -1260,71 +1201,6 @@ $("dl").onclick=async function(){
   var buf=XLSX.write(wb,{type:"array",bookType:"xlsx",cellDates:true});
   try{var sr=await dlc.save({filename:"rekap-keuangan.xlsx",data:buf});m.textContent=sr&&sr.path?"File siap. Salinan ada di "+sr.path+".":"File siap."}
   catch(e){m.textContent=e&&e.code==="declined"?"Unduhan dibatalkan.":"Gagal menyiapkan unduhan."}
-};
-/* ===== Mode Developer: tombol buatan sendiri ===== */
-var ACT=[["","Tidak ada (hanya perintah)"],["up","Buka tab Rekap"],["tx","Buka tab Transaksi"],["bal","Buka tab Saldo"],["dl","Unduh rekap .xlsx"]];
-var editIdx=null,runCtl=null;
-function actName(a){for(var i=0;i<ACT.length;i++)if(ACT[i][0]===a)return ACT[i][1];return ""}
-function showOut(t,x){$("out").hidden=false;$("outT").textContent=t;$("outB").textContent=x;$("out").scrollIntoView({behavior:"smooth",block:"nearest"})}
-$("outX").onclick=function(){if(runCtl)runCtl.abort();$("out").hidden=true};
-function renderBtns(box){
-  if(!box)return;box.innerHTML="";
-  (cfg.btns||[]).forEach(function(b){box.append(h("button",{class:"cb",text:b.l,onclick:function(){runBtn(b)}}))});
-}
-async function runBtn(b){
-  if(b.a==="dl"){show("tx");$("dl").click()}
-  else if(b.a)show(b.a);
-  if(!b.p)return;
-  if(!sample)return showOut(b.l,"Fitur tidak tersedia.");
-  if(sample.localOnly)return showOut(b.l,window.localSummary());
-  var rows=allRows().slice().sort(function(a,c){return a.t<c.t?-1:a.t>c.t?1:0});
-  if(!rows.length)return showOut(b.l,"Belum ada transaksi tersimpan. Unggah dan simpan mutasi dulu.");
-  var data=rows.slice(-300).map(function(r){return[r.t,r.j,r.k,r.n,r.r,r.d||""].join("|")}).join("\n");
-  var saldo=cfg.acc.map(function(a){var s=rows.filter(function(r){return r.r===a.n}).reduce(function(x,r){return x+eff(r)},0);return a.n+": "+((Number(a.o)||0)+s)}).join("; ");
-  var prompt="Kamu asisten keuangan pribadi untuk COK. Jawab dalam bahasa Indonesia yang santai, jelas, dan singkat, tanpa istilah teknis. Jumlah dalam rupiah. Jenis Balance berarti pindah uang antar rekening milik COK sendiri, jangan dihitung sebagai pemasukan atau pengeluaran. Jangan mengarang data yang tidak ada. Kamu bukan penasihat keuangan resmi.\n\nTransaksi (tanggal|jenis|kategori|jumlah|rekening|deskripsi), "+Math.min(rows.length,300)+" baris terakhir:\n"+data+"\n\nSaldo saat ini: "+saldo+"\n\nPerintah dari COK: "+b.p;
-  if(runCtl)runCtl.abort();runCtl=new AbortController();
-  showOut(b.l,"Claude sedang menjawab...");
-  try{
-    var res=await sample(prompt,{signal:runCtl.signal,cache:false,onText:function(x){$("outB").textContent=x.text}});
-    $("outB").textContent=res.text||"(tidak ada jawaban)";
-  }catch(e){
-    var m={not_granted:"Izin ke Claude ditolak.",rate_limited:"Batas pemakaian tercapai. Coba lagi nanti.",cancelled:"Dihentikan.",session_expired:"Sesi habis, masuk lagi ke Claude."};
-    $("outB").textContent=m[e&&e.code]||"Gagal mendapat jawaban. Coba lagi.";
-  }
-}
-function dm(t,ok){var m=$("dvMsg");m.textContent=t;m.style.color=ok?"var(--pos)":"var(--neg)"}
-function resetForm(){editIdx=null;$("dvLabel").value="";$("dvAct").value="";$("dvPrompt").value="";$("dvSave").textContent="Simpan tombol"}
-function renderDev(){
-  var f=$("dvAct");if(!f.options.length)ACT.forEach(function(a){f.append(h("option",{value:a[0],text:a[1]}))});
-  renderBtns($("btnsDev"));
-  var l=$("dvList");l.innerHTML="";var bs=cfg.btns||[];
-  if(!bs.length){l.append(h("p",{class:"empty",text:"Belum ada tombol. Buat satu di atas."}));return}
-  bs.forEach(function(b,i){
-    l.append(h("div",{class:"it"},
-      h("b",{text:b.l}),
-      h("div",{class:"m",text:"Aksi: "+(actName(b.a||"")||"-")}),
-      h("div",{class:"m",text:b.p?"Perintah: "+b.p:"Tanpa perintah Claude"}),
-      h("div",{class:"row2"},
-        h("button",{class:"sec",text:"Ubah",onclick:function(){editIdx=i;$("dvLabel").value=b.l;$("dvAct").value=b.a||"";$("dvPrompt").value=b.p||"";$("dvSave").textContent="Simpan perubahan";$("dvLabel").focus()}}),
-        h("button",{class:"sec",text:"Hapus",onclick:async function(){cfg.btns.splice(i,1);if(editIdx!=null)resetForm();await persist();renderDev();dm("Tombol dihapus.",true)}}))));
-  });
-}
-$("dvSave").onclick=async function(){
-  var l=$("dvLabel").value.trim(),a=$("dvAct").value,p=$("dvPrompt").value.trim();
-  if(!l)return dm("Isi nama tombol dulu.");
-  if(!a&&!p)return dm("Pilih aksi atau tulis perintah, minimal salah satu.");
-  cfg.btns=cfg.btns||[];
-  if(editIdx==null&&cfg.btns.length>=20)return dm("Maksimal 20 tombol. Hapus yang tidak dipakai dulu.");
-  var nb={l:l,a:a,p:p};
-  if(editIdx!=null)cfg.btns[editIdx]=nb;else cfg.btns.push(nb);
-  resetForm();await persist();renderDev();dm("Tombol tersimpan.",true);
-};
-$("dvEx").onclick=async function(){
-  cfg.btns=cfg.btns||[];
-  var ex=[{l:"Ringkas bulan ini",a:"tx",p:"Ringkas bulan terakhir yang ada datanya: total pendapatan, total pengeluaran, dan 3 kategori pengeluaran terbesar. Abaikan baris Balance."},{l:"Cari yang bisa dihemat",a:"",p:"Cari 3 pengeluaran yang paling mungkin dihemat, lalu beri saran sederhana yang bisa langsung dicoba."},{l:"Unduh rekap",a:"dl",p:""}];
-  var added=0;ex.forEach(function(e){if(!cfg.btns.some(function(b){return b.l===e.l})&&cfg.btns.length<20){cfg.btns.push(e);added++}});
-  if(!added)return dm("Contohnya sudah ada.");
-  await persist();renderDev();dm(added+" tombol contoh ditambahkan.",true);
 };
 /* ===== Setup: rekening dan kategori ===== */
 var JS=["Pendapatan","Pengeluaran","Tagihan","Investasi","Cicilan"];
@@ -1438,7 +1314,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v12 (balance satu sisi, hapus satu sisi)";
+var APP_VER="v13 (versi ringkas)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
@@ -1455,12 +1331,6 @@ function renderSet(){
   Array.from(gb.querySelectorAll("details")).forEach(function(d){gopen[d.dataset.k]=d.open});
   box.innerHTML="";gb.innerHTML="";
   box.append(accBlock(open.acc));
-  var gd=h("details",{class:"card","data-k":"gs"});if(open.gs||gopen.gs)gd.open=true;
-  var gi=h("input",{value:cfg.gs?"https://docs.google.com/spreadsheets/d/"+cfg.gs+"/edit":"",placeholder:"Tempel link Google Sheets Merkuri-mu","aria-label":"Link Google Sheets"});
-  gd.append(h("summary",{text:"Google Sheets"+(cfg.gs?" (tersambung)":"")}),
-    h("p",{class:"m",text:"Spreadsheet tujuan tombol Kirim ke Google Sheets di tab Transaksi. Data ditulis ke tab Transaksi: kolom D sampai H dan kolom AY (Deskripsi)."}),gi,
-    h("button",{class:"w",text:"Simpan link",onclick:function(){var v=gi.value.trim(),m=v.match(/\/d\/([A-Za-z0-9_-]{20,})/),id=m?m[1]:(/^[A-Za-z0-9_-]{20,}$/.test(v)?v:"");
-      if(v&&!id)return sm("Link Google Sheets tidak dikenali.",false);cfg.gs=id;persist();renderSet();sm(id?"Link Google Sheets disimpan.":"Link Google Sheets dihapus.",true)}}));
   var sd=h("details",{class:"card","data-k":"gsx"});if(gopen.gsx||(gopen.gsx===undefined&&!cfg.gsurl))sd.open=true;
   var ui=h("input",{value:cfg.gsurl||"",placeholder:"Alamat Web app (https://script.google.com/macros/s/.../exec)","aria-label":"Alamat skrip"});
   var ti=h("input",{value:cfg.gstoken||"",placeholder:"Kode rahasia (sama dengan di skrip)","aria-label":"Kode rahasia",style:"margin-top:8px"});
@@ -1476,7 +1346,7 @@ function renderSet(){
       try{var d=gsParse(await gsCall(u+(u.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(t),"GET"));
         renderSet();sm(d&&d.ok?"Tersambung ke spreadsheet: "+d.sheet+(d.versi>=4?"":". PERHATIAN: skrip masih versi lama, perbarui dengan kode terbaru dan deploy versi baru"):"Tersimpan, tapi: "+((d&&d.error)||"skrip tidak merespons"),!!(d&&d.ok))
       }catch(e){renderSet();sm("Tersimpan, tapi belum bisa tersambung. Cek internet, atau apakah akses Web app diset Siapa saja.",false)}}}));
-  if(mcpNs)gb.append(gd);gb.append(sd);renderSub();
+  gb.append(sd);renderSub();
   var cur=curYm();JS.forEach(function(j){box.append(block(j,j,KAT[j],katOps(j),open[j],function(n){return !actIn(cfg.km[j+"|"+n],cur)}))});
 }
 /* ===== Review bulanan (meniru sheet bulanan Merkuri) ===== */
