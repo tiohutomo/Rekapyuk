@@ -257,8 +257,8 @@ function findAmounts(s){
   while((m=AMT.exec(s))){
     var body=m[4],hasRp=!!m[2],sign=m[1]||m[3]||"",val=null;
     var th=body.match(/^(\d{1,3}(?:[.,]\d{3})+)(?:[.,]?(\d{1,2})|\s00)?$/);
-    if(th)val=Number(th[1].replace(/[.,]/g,""));
-    else if(hasRp||(sign&&body.replace(/\D/g,"").length>=4)){val=Math.round(Number(body.replace(",",".")))}
+    if(th){val=Number(th[1].replace(/[.,]/g,""));if(th[2]&&th[2].length===2)val=r2(val+Number(th[2])/100)}
+    else if(hasRp||(sign&&body.replace(/\D/g,"").length>=4)){val=r2(Number(body.replace(",",".")))}
     if(val==null||!(val>=0))continue;
     var before=s.slice(Math.max(0,m.index-14),m.index);
     if(/saldo|balance|sisa/i.test(before))continue;
@@ -274,7 +274,7 @@ function cellNum(s){
   var n;
   if(/[.,]\d{1,2}$/.test(s)&&!/^\d{1,3}([.,]\d{3})+$/.test(s)){n=Number(s.replace(/[.,](?=\d{1,2}$)/,"#").replace(/[.,]/g,"").replace("#","."))}
   else n=Number(s.replace(/[.,]/g,""));
-  n=Math.round(n)||0;return neg?-n:n;
+  n=r2(n);return neg?-n:n;
 }
 
 var IN_RE=/\b(masuk|terima|diterima|setor|setoran|gaji|payroll|salary|bunga|interest|cashback|refund|pengembalian|kredit|credit)\b/i;
@@ -437,7 +437,36 @@ async function getOcr(){
     ocrW=w;return w;
   }catch(e){throw{code:"ocr_lib"}}
 }
-async function ocrBlob(b){var w=await getOcr(),r=await w.recognize(b);return r&&r.data?r.data.text:""}
+async function fixCents(w,b,data,text){
+  var words=(data&&data.words)||[],bm=null,done=0;
+  for(var i=0;i<words.length;i++){
+    var x=words[i],t=x.text||"",bb=x.bbox;
+    if(!bb||!/^\d/.test(t)||!/^\d{1,3}(?:[.,]\d{3})*/.test(t))continue;
+    var prev=words[i-1],next=words[i+1];
+    if(!prev||!/^[+\-−–]?\s*rp\.?$/i.test(String(prev.text||"").replace(/^[^A-Za-z+\-−–]+/,"")))continue;
+    if(next&&next.bbox&&Math.abs(next.bbox.y0-bb.y0)<10&&next.bbox.x0>bb.x1)continue;
+    var m=t.match(/^(\d{1,3}(?:[.,]\d{3})+|\d+)/);if(!m)continue;
+    var ip=m[1],junk=t.slice(ip.length);
+    if(/^[.,]\d{2}$/.test(junk))continue;
+    if(!(/[^\d.,\s]/.test(junk)||/\d/.test(junk)||/[.,]\d{4}$/.test(t)))continue;
+    if(!bm)bm=await createImageBitmap(b);
+    var h=bb.y1-bb.y0,sx=Math.max(0,bb.x1-1.3*h),sw=Math.min(bm.width-sx,1.3*h+6),sy=Math.max(0,bb.y0-4),sh=Math.min(bm.height-sy,0.65*h+4),S=6,pad=24;
+    if(sw<=4||sh<=4)continue;
+    var c=document.createElement("canvas");c.width=Math.round(sw*S+2*pad);c.height=Math.round(sh*S+2*pad);
+    var g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.imageSmoothingQuality="high";g.drawImage(bm,sx,sy,sw,sh,pad,pad,sw*S,sh*S);
+    var blob=await new Promise(function(r){c.toBlob(r,"image/png")});
+    await w.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7"});
+    var rr=await w.recognize(blob),dg=String(rr&&rr.data?rr.data.text:"").replace(/\D/g,"");
+    if(dg.length>=2){var cents=dg.slice(-2),k=text.indexOf(t);if(k>=0){text=text.slice(0,k)+ip+","+cents+text.slice(k+t.length);done++}}
+  }
+  return text;
+}
+async function ocrBlob(b){
+  var w=await getOcr(),r=await w.recognize(b),text=r&&r.data?r.data.text:"";
+  try{text=await fixCents(w,b,r.data,text)}catch(e){}
+  try{await w.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6"})}catch(e){}
+  return text;
+}
 
 /* ---- Pengganti claude.use(...) ---- */
 async function localSample(){return Promise.reject({code:"no_ai"})}
@@ -524,7 +553,7 @@ window.localSummary=function(){
   rows.filter(function(r){return r.t.slice(0,7)===last&&r.j!=="Balance"}).forEach(function(r){
     if(r.j==="Pendapatan")inn+=r.n;else{out+=r.n;var k=r.k||r.j;cat[k]=(cat[k]||0)+r.n}});
   var top=Object.keys(cat).sort(function(a,b){return cat[b]-cat[a]}).slice(0,5);
-  var f=function(n){return"Rp "+n.toLocaleString("id-ID")};
+  var f=function(n){return"Rp "+(Math.round(n*100)/100).toLocaleString("id-ID",{minimumFractionDigits:0,maximumFractionDigits:2})};
   return"Ringkasan "+last+" (dihitung otomatis, tanpa AI)\nPendapatan: "+f(inn)+"\nPengeluaran: "+f(out)+"\nSelisih: "+(inn-out<0?"-":"")+f(Math.abs(inn-out))+"\n\nPengeluaran terbesar:\n"+top.map(function(k,i){return(i+1)+". "+k+": "+f(cat[k])}).join("\n")+"\n\nPerintah bebas untuk Claude tidak tersedia di versi lokal.";
 };
 
@@ -638,7 +667,8 @@ var $=function(i){return document.getElementById(i)};
 function h(t,p){var e=document.createElement(t);p=p||{};for(var a in p){if(a==="text")e.textContent=p[a];else if(a==="class")e.className=p[a];else if(a.indexOf("on")===0)e[a]=p[a];else e.setAttribute(a,p[a])}for(var i=2;i<arguments.length;i++){var c=arguments[i];if(c!=null)e.append(c)}return e}
 function sel(opts,val,fn){var s=h("select",{});opts.forEach(function(o){var op=h("option",{value:o,text:o||"(kosong)"});s.append(op)});s.value=val;s.onchange=function(){fn(s.value)};return s}
 function fd(iso){var p=iso.split("-");return p[2]+" "+MON[+p[1]-1]+" "+p[0]}
-function rp(n){return Math.abs(n).toLocaleString("id-ID")}
+function r2(x){return Math.round((Number(x)||0)*100)/100}
+function rp(n){return r2(Math.abs(n)).toLocaleString("id-ID",{minimumFractionDigits:0,maximumFractionDigits:2})}
 function norm(s){return(s||"").toLowerCase().replace(/[0-9]+/g,"").replace(/\s+/g," ").trim().slice(0,30)}
 function curYm(){var n=new Date();return n.getFullYear()+"-"+("0"+(n.getMonth()+1)).slice(-2)}
 function actIn(m,ym){return !(m&&m.f&&ym<m.f)&&!(m&&m.t&&ym>=m.t)}
@@ -722,7 +752,7 @@ function renderMan(){
     row2=h("div",{},h("label",{text:"Kategori"}),sel([""].concat(kl),man.k,function(v){man.k=v}));
   }
   var add=h("button",{class:"w",text:"Tambah ke daftar",onclick:function(){
-    var n=Math.round(Number(man.n));
+    var n=r2(man.n);
     if(!rek)return say("Pilih rekening dulu.");
     if(!(n>0))return say("Isi jumlah lebih dari 0.");
     if(man.j==="Balance"&&!man.tuj)return say("Pilih rekening lawan transfer.");
@@ -831,7 +861,7 @@ $("stop").onclick=function(){if(ctl)ctl.abort()};
 function build(arr,rek){
   var existing=allRows(),seen={};pending=[];
   arr.forEach(function(r){
-    var n=Math.round(Number(r.n));if(!(n>0)||!/^\d{4}-\d{2}-\d{2}$/.test(r.t||""))return;
+    var n=r2(r.n);if(!(n>0)||!/^\d{4}-\d{2}-\d{2}$/.test(r.t||""))return;
     var arah=r.arah==="masuk"?"masuk":"keluar",j=J.indexOf(r.j)>=0?r.j:(arah==="masuk"?"Pendapatan":"Pengeluaran");
     var tym=r.t.slice(0,7),k=katFor(j,tym).indexOf(r.k)>=0?r.k:"",tuj=accFor(tym).indexOf(r.tujuan)>=0&&r.tujuan!==rek?r.tujuan:"";
     var key=[r.t,n,j,norm(r.ket)].join("|"),dup=!!seen[key];seen[key]=1;
@@ -875,7 +905,7 @@ function renderRev(){
     it.append(h("label",{text:"Deskripsi untuk rekap (isi sendiri; teks di atas hanya info)"}),di,pv);upPv();
     if(p.open){
       var ti=h("input",{type:"date",value:p.t,"aria-label":"Tanggal"});ti.onchange=function(){if(/^\d{4}-\d{2}-\d{2}$/.test(ti.value))p.t=ti.value;renderRev()};
-      var ni=h("input",{type:"number",value:p.n,"aria-label":"Jumlah"});ni.onchange=function(){var v=Math.round(Number(ni.value));if(v>0)p.n=v;else sm("Jumlah harus lebih dari 0.",false);renderRev()};
+      var ni=h("input",{type:"number",step:"0.01",value:p.n,"aria-label":"Jumlah"});ni.onchange=function(){var v=r2(ni.value);if(v>0)p.n=v;else sm("Jumlah harus lebih dari 0.",false);renderRev()};
       var ar=sel(["keluar","masuk"],p.arah,function(v){p.arah=v;renderRev()});
       var rk=sel(withCur(accFor(p.t.slice(0,7)),p.rek),p.rek,function(v){p.rek=v;if(p.tuj===v){p.tuj="";p.sel=false}renderRev()});
       it.append(h("div",{class:"edbox"},h("div",{class:"row2"},h("div",{},h("label",{text:"Tanggal"}),ti),h("div",{},h("label",{text:"Jumlah (Rp)"}),ni)),
@@ -1012,7 +1042,7 @@ var txEdit=null,gsOnlyNew=true,mcpNs=null,GSN="Google Sheets";
 var MI={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Mei:5,Jun:6,Jul:7,Aug:8,Agu:8,Agt:8,Sep:9,Oct:10,Okt:10,Nov:11,Dec:12,Des:12};
 function serial(iso){var p=iso.split("-");return Date.UTC(+p[0],+p[1]-1,+p[2])/864e5+25569}
 function pDate(s){var m=String(s||"").trim().match(/^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})$/);if(!m)return"";var k=m[2].charAt(0).toUpperCase()+m[2].slice(1,3).toLowerCase();if(!MI[k])return"";return m[3]+"-"+("0"+MI[k]).slice(-2)+"-"+("0"+m[1]).slice(-2)}
-function pNum(s){s=String(s||"").trim();var neg=/^\(.*\)$/.test(s)||/^-/.test(s);s=s.replace(/[^0-9.,]/g,"");if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");var n=Math.round(Number(s)||0);return neg?-n:n}
+function pNum(s){s=String(s||"").trim();var neg=/^\(.*\)$/.test(s)||/^-/.test(s);s=s.replace(/[^0-9.,]/g,"");if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");var n=r2(s);return neg?-n:n}
 function mpl(res){var p=res&&res.payload;if(typeof p==="string"){try{p=JSON.parse(p)}catch(e){p=null}}return p||{}}
 var MERR={needs_reauth:"Koneksi Google Sheets kedaluwarsa. Sambungkan ulang di claude.ai Settings \u2192 Connectors.",server_not_connected:"Google Sheets belum tersambung di akun Claude ini. Tambahkan di claude.ai Settings \u2192 Connectors.",selection_required:"Pilih akun Google Sheets yang dipakai saat Claude menanyakannya, lalu coba lagi.",not_in_manifest:"Akses Google Sheets untuk aplikasi ini belum diizinkan.",approval_required:"Pengiriman butuh persetujuanmu. Tekan Kirim lagi lalu pilih Izinkan.",tool_error:"Google Sheets menolak permintaan. Pastikan link di Setup benar dan akun Google-mu punya akses edit.",server_unavailable:"Google Sheets sedang tidak bisa dihubungi. Coba lagi sebentar lagi.",not_granted:"Koneksi Google Sheets tidak tersedia di tampilan ini.",capability_disabled:"Koneksi Google Sheets tidak tersedia di tampilan ini."};
 async function sendGs(src,out){
@@ -1100,7 +1130,7 @@ function txEditor(r){
   var st={t:r.t,j:r.j,k:r.k||"",n:Math.abs(r.n),d:r.d||"",rek:r.r,from:"",to:""};
   if(r.j==="Balance"){if(r.n<0){st.from=r.r;st.to=pt?pt.r:""}else{st.to=r.r;st.from=pt?pt.r:""}}
   var box=h("div",{class:"edbox"}),dyn=h("div",{});
-  var ti=h("input",{type:"date",value:st.t,"aria-label":"Tanggal"}),ni=h("input",{type:"number",value:st.n,"aria-label":"Jumlah"}),di=h("input",{value:st.d,"aria-label":"Deskripsi"});
+  var ti=h("input",{type:"date",value:st.t,"aria-label":"Tanggal"}),ni=h("input",{type:"number",step:"0.01",value:st.n,"aria-label":"Jumlah"}),di=h("input",{value:st.d,"aria-label":"Deskripsi"});
   function paint(){dyn.innerHTML="";
     if(st.j==="Balance"){dyn.append(h("div",{class:"row2"},h("div",{},h("label",{text:"Dari rekening"}),sel([""].concat(accs),st.from,function(v){st.from=v})),h("div",{},h("label",{text:"Ke rekening"}),sel([""].concat(accs),st.to,function(v){st.to=v}))));
       dyn.append(h("p",{class:"m",text:pt?"Transfer ini tercatat di 2 baris (rekening asal dan tujuan). Keduanya ikut diubah.":"Transfer dicatat sebagai 2 baris: rekening asal (minus) dan tujuan (plus)."}))}
@@ -1113,7 +1143,7 @@ function txEditor(r){
   box.append(h("b",{text:"Ubah transaksi"}),h("div",{class:"row2"},h("div",{},h("label",{text:"Tanggal"}),ti),h("div",{},h("label",{text:"Jumlah (Rp)"}),ni)),
     h("label",{text:"Jenis (alokasi)"}),js,dyn,h("label",{text:"Deskripsi"}),di,r.b?h("p",{class:"bank",text:"Teks asli dari bank: "+r.b}):null,
     h("div",{class:"row2",style:"margin-top:10px"},h("button",{text:"Simpan perubahan",onclick:async function(){
-      var t=ti.value,n=Math.round(Number(ni.value)),d=di.value.trim();
+      var t=ti.value,n=r2(ni.value),d=di.value.trim();
       if(!/^\d{4}-\d{2}-\d{2}$/.test(t))return sm("Tanggal belum benar.",false);
       if(!(n>0))return sm("Jumlah harus lebih dari 0.",false);
       if(st.j==="Balance"){if(!st.from||!st.to)return sm("Pilih rekening asal dan tujuan transfer.",false);if(st.from===st.to)return sm("Rekening asal dan tujuan harus berbeda.",false)}
@@ -1163,11 +1193,11 @@ $("dl").onclick=async function(){
   if(!dlc){m.textContent="Unduhan tidak tersedia di tampilan ini.";return}
   var aoa=[["TANGGAL","TRANSAKSI","KATEGORI","JUMLAH","REKENING","DESKRIPSI"]].concat(rows.map(function(r){var p=r.t.split("-");return[new Date(Date.UTC(+p[0],+p[1]-1,+p[2])),r.j,r.k,r.n,r.r,r.d||""]}));
   var ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:true});
-  for(var i=2;i<=aoa.length;i++){ws["A"+i].z="dd mmm yyyy";ws["D"+i].z="#,##0"}
+  for(var i=2;i<=aoa.length;i++){ws["A"+i].z="dd mmm yyyy";ws["D"+i].z="#,##0.00"}
   ws["!cols"]=[{wch:13},{wch:13},{wch:26},{wch:14},{wch:32},{wch:34}];
   var ba=[["REKENING","SALDO AWAL","SALDO AKHIR"]].concat(cfg.acc.map(function(a){var s=rows.filter(function(r){return r.r===a.n}).reduce(function(x,r){return x+eff(r)},0);return[a.n,Number(a.o)||0,(Number(a.o)||0)+s]}));
   var ws2=XLSX.utils.aoa_to_sheet(ba);ws2["!cols"]=[{wch:34},{wch:16},{wch:16}];
-  for(var j=2;j<=ba.length;j++){ws2["B"+j].z="#,##0";ws2["C"+j].z="#,##0"}
+  for(var j=2;j<=ba.length;j++){ws2["B"+j].z="#,##0.00";ws2["C"+j].z="#,##0.00"}
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Transaksi");XLSX.utils.book_append_sheet(wb,ws2,"Rekening");
   var buf=XLSX.write(wb,{type:"array",bookType:"xlsx",cellDates:true});
   try{var sr=await dlc.save({filename:"rekap-keuangan.xlsx",data:buf});m.textContent=sr&&sr.path?"File siap. Salinan ada di "+sr.path+".":"File siap."}
