@@ -23,7 +23,7 @@ function doGet(e) {
     catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
   }
   var sh = SpreadsheetApp.getActive().getSheetByName(CONFIG.SHEET);
-  return json_(sh ? { ok: true, versi: 6, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
+  return json_(sh ? { ok: true, versi: 7, sheet: SpreadsheetApp.getActive().getName() } : { ok: false, error: 'Tab "' + CONFIG.SHEET + '" tidak ditemukan.' });
 }
 
 function doPost(e) {
@@ -67,8 +67,8 @@ function tambah_(rows) {
     if (start + send.length - 1 > sh.getMaxRows()) return { ok: false, error: 'Baris di tab Transaksi tidak cukup.' };
     var ab = [], cc = [], desc = [];
     send.forEach(function (r) {
-      var p = r.t.split('-');
-      ab.push([new Date(+p[0], +p[1] - 1, +p[2]), r.j]);
+      // Tanggal dibuat di zona waktu SPREADSHEET (bukan zona proyek skrip) supaya tidak bergeser sehari.
+      ab.push([Utilities.parseDate(r.t, tz, 'yyyy-MM-dd'), r.j]);
       cc.push([r.k || '', Number(r.n), r.r]);
       desc.push([r.d || '']);
     });
@@ -130,7 +130,7 @@ function periksa_(names, tgl) {
   if (!sh) return { ok: false, error: 'Tab "Rekening" tidak ditemukan.' };
   var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tgl || '');
   if (!m) return { ok: false, error: 'Tanggal tidak valid.' };
-  var tanggal = new Date(+m[1], +m[2] - 1, +m[3]);
+  var tanggal = Utilities.parseDate(tgl, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd'); // zona waktu spreadsheet, bukan zona proyek skrip
   var vals = sh.getDataRange().getValues(), t = cariTabelRekening_(vals);
   if (!t) return { ok: false, error: 'Tabel REKENING tidak ditemukan di tab Rekening.' };
   var kol = -1, c;
