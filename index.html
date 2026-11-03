@@ -484,37 +484,19 @@ async function sparseAmounts(w,blob,data6,text){
   });
   return text;
 }
-async function isDarkImg(b){
-  try{
-    var bm=await createImageBitmap(b),c=document.createElement("canvas");c.width=48;c.height=48;
-    var g=c.getContext("2d");g.drawImage(bm,0,0,48,48);var d=g.getImageData(0,0,48,48).data,sum=0,i;
-    for(i=0;i<d.length;i+=4)sum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-    return sum/(d.length/4)<128;
-  }catch(e){return false}
-}
-function ocrScore(tx){return (tx.match(/\brp\.?\s*\d/gi)||[]).length+(tx.match(/\b\d{1,2}\s*[A-Za-z0]{3,9}\.?\s+20\d\d\b/g)||[]).length}
 async function ocrBlob(b0){
-  var w=await getOcr(),best=null,dark=await isDarkImg(b0);
-  /* Gambar terang: bacaan biasa sudah cukup dan cepat. Gambar gelap atau hasil kurang: pra-proses + bacaan tambahan. */
-  if(!dark){
-    var r0=await w.recognize(b0),t0=r0&&r0.data?r0.data.text:"",s0=ocrScore(t0);
-    if(s0>=2)best={b:b0,sc:1,r:r0,text:t0,score:s0};
-  }
-  if(!best){
-    for(var mode=0;mode<2;mode++){
-      var b=await prepOcr(b0,mode),sc=ocrScale,r=await w.recognize(b),tx=r&&r.data?r.data.text:"",score=ocrScore(tx);
-      if(!best||score>best.score)best={b:b,sc:sc,r:r,text:tx,score:score};
-      if(best.score>=2)break;
-    }
-    ocrScale=best.sc;
-    try{best.text=await sparseAmounts(w,best.b,best.r.data,best.text)}catch(e){}
+  var w=await getOcr(),best=null;
+  for(var pass=0;pass<2;pass++){
+    var mode=pass===0?0:1,b=await prepOcr(b0,mode),sc=ocrScale,r=await w.recognize(b),tx=r&&r.data?r.data.text:"";
+    var score=(tx.match(/\brp\.?\s*\d/gi)||[]).length+(tx.match(/\b\d{1,2}\s*[A-Za-z0]{3,9}\.?\s+20\d\d\b/g)||[]).length;
+    if(!best||score>best.score)best={b:b,sc:sc,r:r,text:tx,score:score};
   }
   ocrScale=best.sc;var text=best.text;
+  try{text=await sparseAmounts(w,best.b,best.r.data,text)}catch(e){}
   try{text=await fixCents(w,best.b,best.r.data,text)}catch(e){}
   try{await w.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6"})}catch(e){}
   return text;
 }
-
 
 
 
@@ -1409,7 +1391,7 @@ function accBlock(open){
   return d;
 }
 var setSub="tx";
-var APP_VER="v18 (OCR lebih cepat)";
+var APP_VER="v17 (ringkasan Review hidup)";
 function renderSub(){
   $("appVer").textContent="Versi app: "+APP_VER;
   var bar=$("setSub");bar.innerHTML="";
